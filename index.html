@@ -147,9 +147,30 @@
       <button class="btn btn-ghost btn-sm" id="btn-whoop-detail-back">← Home</button>
       <button class="btn btn-ghost btn-sm" id="btn-whoop-detail-sync">Sync</button>
     </div>
-    <h1 style="margin-bottom:4px;">Whoop, by day</h1>
-    <div class="sub" id="whoop-detail-range" style="margin-bottom:18px;"></div>
-    <div id="whoop-detail-list"></div>
+    <h1 style="margin-bottom:4px;">Whoop trends</h1>
+    <div class="sub" id="whoop-detail-range" style="margin-bottom:16px;"></div>
+
+    <div class="card">
+      <div class="tab-row" id="whoop-metric-tabs"></div>
+      <div class="tab-row" id="whoop-range-tabs" style="margin-top:8px;"></div>
+
+      <div class="spark-wrap" style="height:170px; margin-top:14px;">
+        <svg id="whoop-trend-chart" width="100%" height="170" viewBox="0 0 390 170" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="sub" id="whoop-trend-tooltip" style="min-height:16px; margin-top:4px;">Tap a point to inspect it.</div>
+
+      <div class="row" style="margin-top:14px; gap:8px;">
+        <div class="stack" style="flex:1; text-align:center;"><span class="sub">Average</span><span class="mono" id="whoop-stat-avg" style="font-size:17px;">—</span></div>
+        <div class="stack" style="flex:1; text-align:center;"><span class="sub">Best</span><span class="mono" id="whoop-stat-best" style="font-size:17px;">—</span></div>
+        <div class="stack" style="flex:1; text-align:center;"><span class="sub">Worst</span><span class="mono" id="whoop-stat-worst" style="font-size:17px;">—</span></div>
+      </div>
+      <div class="sub" id="whoop-stat-trend" style="margin-top:10px; text-align:center;"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">History</div>
+      <div id="whoop-detail-list"></div>
+    </div>
   </section>
 
   <!-- ============ COACH ============ -->

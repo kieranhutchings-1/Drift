@@ -213,17 +213,135 @@ document.getElementById('btn-view-whoop-detail').addEventListener('click', openW
 document.getElementById('btn-whoop-detail-back').addEventListener('click', () => goTo('home'));
 document.getElementById('btn-whoop-detail-sync').addEventListener('click', () => syncWhoop(true).then(renderWhoopDetail));
 
+const WHOOP_METRICS = [
+  { id: 'recovery', label: 'Recovery', unit: '%' },
+  { id: 'sleep', label: 'Sleep', unit: '%' },
+  { id: 'strain', label: 'Strain', unit: '' },
+  { id: 'hrv', label: 'HRV', unit: 'ms' },
+  { id: 'rhr', label: 'RHR', unit: 'bpm' }
+];
+const WHOOP_RANGES = [
+  { id: 7, label: '7D' },
+  { id: 30, label: '30D' },
+  { id: 90, label: '90D' },
+  { id: 99999, label: 'All' }
+];
+let whoopMetric = 'recovery';
+let whoopRange = 30;
+
 function renderWhoopDetail() {
-  const list = document.getElementById('whoop-detail-list');
-  const rangeEl = document.getElementById('whoop-detail-range');
-  const days = state.whoop && state.whoop.days ? [...state.whoop.days].sort((a, b) => b.date.localeCompare(a.date)) : [];
-  if (!days.length) {
-    rangeEl.textContent = '';
-    list.innerHTML = `<div class="empty-state">No Whoop data yet — connect and sync from Settings.</div>`;
+  renderWhoopTabs();
+  renderWhoopChartAndStats();
+  renderWhoopDayList();
+}
+
+function renderWhoopTabs() {
+  document.getElementById('whoop-metric-tabs').innerHTML = WHOOP_METRICS.map((m) =>
+    `<button class="tab-btn ${m.id === whoopMetric ? 'active' : ''}" data-metric="${m.id}">${m.label}</button>`
+  ).join('');
+  document.getElementById('whoop-range-tabs').innerHTML = WHOOP_RANGES.map((r) =>
+    `<button class="tab-btn ${r.id === whoopRange ? 'active' : ''}" data-range="${r.id}">${r.label}</button>`
+  ).join('');
+  document.querySelectorAll('#whoop-metric-tabs [data-metric]').forEach((b) => {
+    b.addEventListener('click', () => { whoopMetric = b.dataset.metric; renderWhoopTabs(); renderWhoopChartAndStats(); });
+  });
+  document.querySelectorAll('#whoop-range-tabs [data-range]').forEach((b) => {
+    b.addEventListener('click', () => { whoopRange = parseInt(b.dataset.range); renderWhoopTabs(); renderWhoopChartAndStats(); });
+  });
+}
+
+function whoopFilteredSorted() {
+  const all = (state.whoop && state.whoop.days) || [];
+  const sorted = [...all].sort((a, b) => a.date.localeCompare(b.date));
+  return sorted.slice(-whoopRange);
+}
+
+function renderWhoopChartAndStats() {
+  const svg = document.getElementById('whoop-trend-chart');
+  const tooltip = document.getElementById('whoop-trend-tooltip');
+  const metric = WHOOP_METRICS.find((m) => m.id === whoopMetric);
+  const points = whoopFilteredSorted().filter((d) => d[whoopMetric] !== null && d[whoopMetric] !== undefined);
+
+  document.getElementById('whoop-detail-range').textContent = state.whoop && state.whoop.days.length
+    ? `${state.whoop.days.length} days synced total`
+    : 'No data yet — connect Whoop in Settings.';
+
+  if (points.length < 2) {
+    svg.innerHTML = `<text x="195" y="88" fill="#555E70" font-size="12" text-anchor="middle" font-family="Inter">not enough data for this range yet</text>`;
+    tooltip.textContent = 'Tap a point to inspect it.';
+    ['avg', 'best', 'worst'].forEach((k) => document.getElementById(`whoop-stat-${k}`).textContent = '—');
+    document.getElementById('whoop-stat-trend').textContent = '';
     return;
   }
-  rangeEl.textContent = `${fmtDate(days.at(-1).date)} — ${fmtDate(days[0].date)} · ${days.length} days`;
-  list.innerHTML = days.map((d) => `
+
+  const w = 390, h = 170, padL = 10, padR = 10, padTop = 14, padBottom = 14;
+  const vals = points.map((p) => p[whoopMetric]);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = max - min || 1;
+  const innerW = w - padL - padR, innerH = h - padTop - padBottom;
+  const xStep = innerW / (points.length - 1);
+  const xAt = (i) => padL + i * xStep;
+  const yAt = (v) => padTop + innerH - ((v - min) / range) * innerH;
+  const coords = points.map((p, i) => ({ x: xAt(i), y: yAt(p[whoopMetric]), v: p[whoopMetric], date: p.date }));
+
+  let curve = `M${coords[0].x},${coords[0].y} `;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const c0 = coords[i], c1 = coords[i + 1];
+    curve += `Q${c0.x},${c0.y} ${(c0.x + c1.x) / 2},${(c0.y + c1.y) / 2} `;
+  }
+  curve += `L${coords.at(-1).x},${coords.at(-1).y}`;
+  const area = `M${padL},${h - padBottom} L` + coords.map((c) => `${c.x},${c.y}`).join(' L') + ` L${w - padR},${h - padBottom} Z`;
+
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="whoopGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#3D7BFF"/>
+        <stop offset="100%" stop-color="#FF5C93"/>
+      </linearGradient>
+      <linearGradient id="whoopFill" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#FF5C93" stop-opacity="0.25"/>
+        <stop offset="100%" stop-color="#3D7BFF" stop-opacity="0.02"/>
+      </linearGradient>
+    </defs>
+    <path d="${area}" fill="url(#whoopFill)" stroke="none"/>
+    <path d="${curve}" fill="none" stroke="url(#whoopGrad)" stroke-width="2.2" stroke-linecap="round"/>
+    ${coords.map((c, i) => `<circle class="chart-point" data-i="${i}" cx="${c.x}" cy="${c.y}" r="10" fill="transparent"/><circle cx="${c.x}" cy="${c.y}" r="3" fill="#0B0E13" stroke="url(#whoopGrad)" stroke-width="1.5" pointer-events="none"/>`).join('')}
+  `;
+
+  svg.querySelectorAll('.chart-point').forEach((c) => {
+    c.addEventListener('click', () => {
+      const i = parseInt(c.dataset.i);
+      const p = coords[i];
+      tooltip.textContent = `${fmtDate(p.date)} — ${metric.label}: ${num(p.v)}${metric.unit}`;
+    });
+  });
+
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  document.getElementById('whoop-stat-avg').textContent = `${num(avg)}${metric.unit}`;
+  document.getElementById('whoop-stat-best').textContent = `${num(max)}${metric.unit}`;
+  document.getElementById('whoop-stat-worst').textContent = `${num(min)}${metric.unit}`;
+
+  const mid = Math.floor(vals.length / 2);
+  const firstHalfAvg = vals.slice(0, mid || 1).reduce((a, b) => a + b, 0) / (mid || 1);
+  const secondHalfAvg = vals.slice(mid).reduce((a, b) => a + b, 0) / (vals.length - mid);
+  const delta = secondHalfAvg - firstHalfAvg;
+  const trendEl = document.getElementById('whoop-stat-trend');
+  if (Math.abs(delta) < range * 0.03) {
+    trendEl.textContent = `Roughly steady across this period`;
+  } else {
+    trendEl.textContent = `${delta > 0 ? '▲' : '▼'} Trending ${delta > 0 ? 'up' : 'down'} vs the start of this period (${delta > 0 ? '+' : ''}${num(delta)}${metric.unit})`;
+  }
+  tooltip.textContent = 'Tap a point to inspect it.';
+}
+
+function renderWhoopDayList() {
+  const wrap = document.getElementById('whoop-detail-list');
+  const days = state.whoop && state.whoop.days ? [...state.whoop.days].sort((a, b) => b.date.localeCompare(a.date)) : [];
+  if (!days.length) {
+    wrap.innerHTML = `<div class="empty-state">No Whoop data yet — connect and sync from Settings.</div>`;
+    return;
+  }
+  wrap.innerHTML = days.map((d) => `
     <div class="whoop-day-row">
       <div class="whoop-recovery-dot" style="background:${recoveryColor(d.recovery)};">${d.recovery !== null && d.recovery !== undefined ? Math.round(d.recovery) : '—'}</div>
       <div class="whoop-day-info">

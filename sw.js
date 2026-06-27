@@ -1,4 +1,4 @@
-const CACHE = 'drift-v1';
+const CACHE = 'drift-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -25,18 +25,18 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 
+// Network-first: always try to fetch the latest version when online (so updates
+// show up immediately after a redeploy), and only fall back to the cached copy
+// when there's no connection at all.
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(e.request)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((cache) => cache.put(e.request, copy)).catch(() => {});
-          return res;
-        })
-        .catch(() => cached);
-    })
+    fetch(e.request)
+      .then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((cache) => cache.put(e.request, copy)).catch(() => {});
+        return res;
+      })
+      .catch(() => caches.match(e.request))
   );
 });
