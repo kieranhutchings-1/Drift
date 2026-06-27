@@ -186,6 +186,18 @@
     </div>
 
     <div class="card">
+      <div class="row">
+        <div class="card-title" style="margin-bottom:0;">Ask your coach</div>
+        <span class="pill" id="ai-status">local mode</span>
+      </div>
+      <div id="coach-chat" style="margin-top:12px; max-height:260px; overflow-y:auto;"></div>
+      <div class="row" style="margin-top:10px; gap:8px;">
+        <input id="coach-input" placeholder="Ask about your stats, recovery, plan...">
+        <button class="btn btn-primary btn-sm" id="coach-send" style="flex-shrink:0;">Send</button>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="card-title">Build a plan</div>
       <div class="row" style="gap:8px; margin-bottom:12px;">
         <button class="btn btn-ghost btn-sm" id="plan-tab-run" style="flex:1;">Running</button>
@@ -198,18 +210,6 @@
     <div class="card" id="plan-output-card" style="display:none;">
       <div class="card-title">Your plan</div>
       <div id="plan-output"></div>
-    </div>
-
-    <div class="card">
-      <div class="row">
-        <div class="card-title" style="margin-bottom:0;">Ask your coach</div>
-        <span class="pill" id="ai-status">local mode</span>
-      </div>
-      <div id="coach-chat" style="margin-top:12px; max-height:260px; overflow-y:auto;"></div>
-      <div class="row" style="margin-top:10px; gap:8px;">
-        <input id="coach-input" placeholder="Ask about your stats, recovery, plan...">
-        <button class="btn btn-primary btn-sm" id="coach-send" style="flex-shrink:0;">Send</button>
-      </div>
     </div>
   </section>
 
