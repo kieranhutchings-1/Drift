@@ -4,6 +4,31 @@
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 
+/* ---- Keep #app pinned to the real visible area when the iOS keyboard opens ----
+   iOS treats the on-screen keyboard as shrinking the "visual viewport" while the
+   layout viewport stays full-size, and it sometimes pans the whole page to keep
+   a focused input visible — which, combined with our fixed-height #app, looks
+   like the entire app sliding upward and clipping behind the status bar. Pinning
+   #app's height to visualViewport.height and forcing scroll back to (0,0) on every
+   change keeps the app itself static and lets the keyboard simply cover the
+   bottom of the screen like a normal native app. */
+function syncViewportHeight() {
+  const vv = window.visualViewport;
+  const appEl = document.getElementById('app');
+  if (vv) {
+    appEl.style.height = vv.height + 'px';
+    window.scrollTo(0, 0);
+  } else {
+    appEl.style.height = '100dvh';
+  }
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', syncViewportHeight);
+  window.visualViewport.addEventListener('scroll', syncViewportHeight);
+}
+window.addEventListener('load', syncViewportHeight);
+syncViewportHeight();
+
 /* ---- Storage keys ---- */
 const KEYS = {
   weights: 'drift_weights',     // [{id, date, kg}]
@@ -48,6 +73,10 @@ function persist(key) {
     whoopConfig: KEYS.whoopConfig
   };
   store.set(map[key], state[key]);
+  // whoopConfig is what tells us WHERE the backend is — can't be synced through
+  // itself. whoop is already durable server-side via its own sync, no need to
+  // duplicate it in the general state blob.
+  if (key !== 'whoopConfig' && key !== 'whoop') pushStateDebounced();
 }
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
@@ -472,6 +501,8 @@ document.getElementById('btn-save-whoop-config').addEventListener('click', () =>
   persist('whoopConfig');
   toast('Connection settings saved');
   checkWhoopStatus();
+  sendConfigToSW();
+  pullState();
 });
 
 document.getElementById('btn-connect-whoop').addEventListener('click', () => {
@@ -561,6 +592,160 @@ async function backfillWhoopHistory() {
   }
   if (pages >= maxPages) progressEl.textContent = `Stopped after ${totalFetched} days (safety limit) — tap again if you need to go further back.`;
 }
+
+/* ===================== CLOUD STATE SYNC ===================== */
+// The data-loss fix: everything except the Whoop cache and the connection
+// settings themselves gets mirrored to the backend, debounced so rapid edits
+// don't hammer the Worker. On launch, the cloud copy is treated as the source
+// of truth (if one exists) so a reinstalled or new device picks up right
+// where you left off.
+
+const SYNCED_KEYS = ['weights', 'goal', 'jabs', 'jabConfig', 'milestonesSeen', 'plateauNotified', 'coachHistory', 'apikey'];
+let pushStateTimer = null;
+
+function pushStateDebounced() {
+  clearTimeout(pushStateTimer);
+  pushStateTimer = setTimeout(pushState, 1500);
+}
+
+async function pushState() {
+  const base = whoopBase();
+  if (!base || !state.whoopConfig.sharedKey) return;
+  const payload = {};
+  SYNCED_KEYS.forEach((k) => { payload[k] = state[k]; });
+  try {
+    await fetch(`${base}/api/state`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Drift-Key': state.whoopConfig.sharedKey },
+      body: JSON.stringify(payload)
+    });
+  } catch {
+    // Offline or unreachable — fine, the next edit will retry, and localStorage still has it.
+  }
+}
+
+async function pullState() {
+  const base = whoopBase();
+  if (!base || !state.whoopConfig.sharedKey) return;
+  try {
+    const res = await fetch(`${base}/api/state`, { headers: { 'X-Drift-Key': state.whoopConfig.sharedKey } });
+    if (!res.ok) return;
+    const { data } = await res.json();
+    if (data) {
+      SYNCED_KEYS.forEach((k) => {
+        if (data[k] !== undefined) { state[k] = data[k]; store.set(KEYS[k], data[k]); }
+      });
+      renderAll();
+      toast('Synced your data from the cloud');
+    } else {
+      // Nothing saved remotely yet — this device's local data becomes the seed.
+      pushState();
+    }
+  } catch {
+    // Offline — just keep using whatever's local.
+  }
+}
+
+/* ===================== PUSH NOTIFICATIONS ===================== */
+
+const VAPID_PUBLIC_KEY = 'BF2S7q69ULr0vV2Q-UIke60keg9P1JOLf6TU4eaK-Bb-71syfnkX3dFz37MnSEFnPlhhtNlul4RAffQDskUtg5Y';
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+function sendConfigToSW() {
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      type: 'drift-config',
+      workerUrl: state.whoopConfig.workerUrl,
+      sharedKey: state.whoopConfig.sharedKey
+    });
+  }
+}
+
+async function renderPushStatus() {
+  const el = document.getElementById('push-status');
+  if (!el) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) { el.textContent = 'not supported'; return; }
+  if (Notification.permission === 'denied') { el.textContent = 'blocked — check iOS notification settings'; return; }
+  if (Notification.permission !== 'granted') { el.textContent = 'not enabled'; return; }
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    el.textContent = sub ? 'enabled' : 'not enabled';
+  } catch {
+    el.textContent = 'not enabled';
+  }
+}
+
+document.getElementById('btn-enable-push').addEventListener('click', async () => {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    toast('Push notifications are not supported in this browser');
+    return;
+  }
+  const base = whoopBase();
+  if (!base || !state.whoopConfig.sharedKey) {
+    toast('Set up your Whoop backend connection above first — reminders use the same backend');
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') { toast('Notification permission was not granted'); renderPushStatus(); return; }
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) });
+    }
+    await fetch(`${base}/api/push/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Drift-Key': state.whoopConfig.sharedKey },
+      body: JSON.stringify(sub.toJSON())
+    });
+    sendConfigToSW();
+    toast('Reminders enabled');
+  } catch (err) {
+    toast('Could not enable reminders: ' + err.message);
+  }
+  renderPushStatus();
+});
+
+document.getElementById('btn-disable-push').addEventListener('click', async () => {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      const base = whoopBase();
+      if (base && state.whoopConfig.sharedKey) {
+        await fetch(`${base}/api/push/unsubscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Drift-Key': state.whoopConfig.sharedKey },
+          body: JSON.stringify({ endpoint: sub.endpoint })
+        });
+      }
+      await sub.unsubscribe();
+    }
+    toast('Reminders disabled');
+  } catch (err) {
+    toast('Could not disable reminders: ' + err.message);
+  }
+  renderPushStatus();
+});
+
+document.getElementById('btn-test-push').addEventListener('click', async () => {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification('Test notification', {
+      body: 'If you can see this, Drift can show you notifications.',
+      icon: './icons/icon-192.png'
+    });
+  } catch (err) {
+    toast('Could not show a test notification: ' + err.message);
+  }
+});
 
 /* ===================== JABS ===================== */
 function sortedJabs() { return [...state.jabs].sort((a, b) => a.date.localeCompare(b.date)); }
@@ -1094,15 +1279,19 @@ function renderAll() {
   renderCoachChat();
   renderWhoopSettingsFields();
   checkWhoopStatus();
+  renderPushStatus();
 }
 renderAll();
 if (state.whoopConfig.workerUrl && state.whoopConfig.sharedKey) {
   syncWhoop(false);
+  pullState();
 }
 
 /* ===================== Service worker ===================== */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker.register('./sw.js').then(() => {
+      navigator.serviceWorker.ready.then(() => sendConfigToSW());
+    }).catch(() => {});
   });
 }

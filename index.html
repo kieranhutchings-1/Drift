@@ -254,6 +254,19 @@
     </div>
 
     <div class="card">
+      <div class="row" style="margin-bottom:8px;">
+        <div class="card-title" style="margin-bottom:0;">Reminders</div>
+        <span class="pill" id="push-status">checking…</span>
+      </div>
+      <div class="sub" style="margin-bottom:10px;">Nudges for a due jab or a missed weigh-in — checked once a day, only shown when something's actually due.</div>
+      <div class="row" style="gap:10px;">
+        <button class="btn btn-primary btn-block btn-sm" id="btn-enable-push">Enable</button>
+        <button class="btn btn-ghost btn-block btn-sm" id="btn-disable-push">Disable</button>
+      </div>
+      <button class="btn btn-ghost btn-block btn-sm" id="btn-test-push" style="margin-top:10px;">Send test notification</button>
+    </div>
+
+    <div class="card">
       <div class="card-title">AI coach (optional)</div>
       <div class="sub" style="margin-bottom:10px;">Add your own Anthropic API key to unlock real AI chat in the Coach tab. Stored only on this device, never sent anywhere but Anthropic's API.</div>
       <div class="field"><input type="password" id="set-apikey" placeholder="sk-ant-..."></div>
