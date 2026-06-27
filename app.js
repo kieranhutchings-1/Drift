@@ -4,30 +4,22 @@
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 
-/* ---- Keep #app pinned to the real visible area when the iOS keyboard opens ----
-   iOS treats the on-screen keyboard as shrinking the "visual viewport" while the
-   layout viewport stays full-size, and it sometimes pans the whole page to keep
-   a focused input visible — which, combined with our fixed-height #app, looks
-   like the entire app sliding upward and clipping behind the status bar. Pinning
-   #app's height to visualViewport.height and forcing scroll back to (0,0) on every
-   change keeps the app itself static and lets the keyboard simply cover the
-   bottom of the screen like a normal native app. */
-function syncViewportHeight() {
-  const vv = window.visualViewport;
-  const appEl = document.getElementById('app');
-  if (vv) {
-    appEl.style.height = vv.height + 'px';
-    window.scrollTo(0, 0);
-  } else {
-    appEl.style.height = '100dvh';
-  }
+/* ---- Keep the page from drifting when the iOS keyboard opens ----
+   The viewport meta's interactive-widget=resizes-content (set in index.html)
+   does the real work on modern iOS: it actually resizes the visible area
+   instead of overlaying or panning it. This JS is just a safety net for
+   older iOS versions that ignore that directive — it nudges the page back
+   to (0,0) if anything still tries to scroll it, without forcing #app's
+   height itself (forcing height caused it to over-shrink past where the
+   keyboard actually starts). */
+function correctScrollDrift() {
+  if (window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0);
 }
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', syncViewportHeight);
-  window.visualViewport.addEventListener('scroll', syncViewportHeight);
+  window.visualViewport.addEventListener('resize', correctScrollDrift);
+  window.visualViewport.addEventListener('scroll', correctScrollDrift);
 }
-window.addEventListener('load', syncViewportHeight);
-syncViewportHeight();
+window.addEventListener('scroll', correctScrollDrift);
 
 /* ---- Storage keys ---- */
 const KEYS = {
