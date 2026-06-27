@@ -1,0 +1,334 @@
+/* ===== Drift — design tokens ===== */
+:root {
+  --bg: #0B0E13;
+  --surface: #12161F;
+  --surface-2: #1A1F2B;
+  --border: #232938;
+  --blue: #3D7BFF;
+  --blue-dim: #2A4F99;
+  --pink: #FF5C93;
+  --pink-dim: #99395C;
+  --grad: linear-gradient(135deg, var(--blue), var(--pink));
+  --text: #F2F4F8;
+  --text-dim: #8B93A7;
+  --text-faint: #555E70;
+  --danger: #FF6B6B;
+  --good: #3DDC97;
+  --amber: #F5B942;
+  --radius-lg: 22px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
+  --nav-h: 78px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+body {
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+h1, h2, h3, .display {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ===== App frame (locked to iPhone 16 Plus dims) ===== */
+#frame-outer {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+#app {
+  position: relative;
+  width: 430px;
+  height: 932px;
+  max-width: 100vw;
+  max-height: 100vh;
+  background: var(--bg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 0 60px rgba(0,0,0,0.6);
+}
+
+/* ===== Screens ===== */
+.screen {
+  flex: 1;
+  overflow-y: auto;
+  padding: 56px 20px calc(var(--nav-h) + 28px);
+  display: none;
+  -webkit-overflow-scrolling: touch;
+}
+.screen.active { display: block; animation: fadein .25s ease; }
+@keyframes fadein { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: none; } }
+
+.screen-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+.screen-header h1 { font-size: 26px; }
+.home-logo { height: 34px; width: auto; display: block; margin-bottom: 4px; }
+.screen-header .sub { color: var(--text-dim); font-size: 13px; }
+
+/* ===== Cards ===== */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.card-title {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 14px;
+}
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.stack { display: flex; flex-direction: column; gap: 4px; }
+
+/* ===== Goal progress ring (signature element) ===== */
+.ring-wrap { position: relative; width: 168px; height: 168px; margin: 4px auto 8px; }
+.ring-wrap svg { transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: var(--surface-2); stroke-width: 12; }
+.ring-fill { fill: none; stroke-width: 12; stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
+.ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ring-center .big { font-size: 30px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.ring-center .lbl { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+/* ===== Buttons ===== */
+.btn {
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform .12s ease, opacity .12s ease;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--grad); color: #0B0E13; width: 100%; }
+.btn-ghost { background: var(--surface-2); color: var(--text); }
+.btn-block { width: 100%; }
+.btn-sm { padding: 9px 14px; font-size: 13px; border-radius: var(--radius-sm); }
+.btn-danger { background: rgba(255,107,107,0.12); color: var(--danger); }
+
+/* ===== Inputs ===== */
+input, select, textarea {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--blue); }
+label { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; display: block; }
+.field { margin-bottom: 14px; }
+
+/* ===== Sparkline (weight history) ===== */
+.spark-wrap { width: 100%; height: 90px; }
+
+/* ===== Subtle medication log =====
+   Deliberately small, quiet, no bright colors, tucked into Home + Log.
+   A single low-contrast pill icon; tapping logs "taken" for today.
+   No labels naming specific medications shown on Home — detail lives in Log/Settings only. */
+.subtle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px;
+  opacity: 0.78;
+}
+.subtle-dot {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.subtle-dot.done { background: rgba(61,123,255,0.14); border-color: var(--blue-dim); }
+.subtle-dot svg { width: 16px; height: 16px; }
+.subtle-text { font-size: 12.5px; color: var(--text-faint); }
+.subtle-text b { color: var(--text-dim); font-weight: 500; }
+
+/* ===== Med list (Log screen, kept low-key) ===== */
+.med-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.med-item:last-child { border-bottom: none; }
+.med-name { font-size: 14px; color: var(--text-dim); }
+.med-toggle {
+  width: 40px; height: 24px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  position: relative; cursor: pointer; flex-shrink: 0;
+}
+.med-toggle .knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--text-faint);
+  transition: left .15s ease, background .15s ease;
+}
+.med-toggle.on { border-color: var(--blue-dim); }
+.med-toggle.on .knob { left: 19px; background: var(--blue); }
+
+/* ===== Bottom nav ===== */
+#nav {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: calc(var(--nav-h) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  background: rgba(18,22,31,0.92);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid var(--border);
+  display: flex;
+}
+.nav-btn {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px;
+  background: none; border: none;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+}
+.nav-btn svg { width: 22px; height: 22px; }
+.nav-btn.active { color: var(--text); }
+.nav-btn.active svg { color: var(--blue); }
+
+/* ===== Misc ===== */
+.divider { height: 1px; background: var(--border); margin: 16px 0; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 5px 12px; font-size: 12px; color: var(--text-dim);
+}
+.empty-state { text-align: center; padding: 30px 10px; color: var(--text-faint); font-size: 13px; }
+.toast {
+  position: absolute; bottom: calc(var(--nav-h) + 16px + var(--safe-bottom)); left: 20px; right: 20px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 12px 16px; font-size: 13.5px;
+  text-align: center; opacity: 0; transform: translateY(8px);
+  transition: all .25s ease; pointer-events: none; z-index: 50;
+}
+.toast.show { opacity: 1; transform: none; }
+
+#coach-input { flex: 1; min-width: 0; }
+#coach-send { width: auto; flex: 0 0 auto; }
+
+/* ===== Milestones ===== */
+.milestone-row {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.milestone-item {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 64px;
+  text-align: center;
+}
+.milestone-badge {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.milestone-item.earned .milestone-badge {
+  background: var(--grad);
+  border-color: transparent;
+}
+.milestone-badge svg { width: 22px; height: 22px; }
+.milestone-label { font-size: 10.5px; color: var(--text-faint); line-height: 1.25; }
+.milestone-item.earned .milestone-label { color: var(--text-dim); }
+
+/* ===== Whoop detail screen ===== */
+.whoop-day-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.whoop-day-row:last-child { border-bottom: none; }
+.whoop-recovery-dot {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0B0E13;
+}
+.whoop-day-info { flex: 1; min-width: 0; }
+.whoop-day-date { font-size: 14px; font-weight: 600; }
+.whoop-day-stats { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+/* ===== Jabs screen ===== */
+.jab-next {
+  border-style: dashed;
+  border-color: var(--blue-dim);
+  background: linear-gradient(160deg, rgba(61,123,255,0.08), rgba(255,92,147,0.05));
+}
+.jab-next .row { align-items: flex-start; }
+.jab-next .stack { flex: 1; min-width: 0; }
+#btn-log-jab { width: auto; flex: 0 0 auto; }
+.jab-history-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.jab-history-item:last-child { border-bottom: none; }
+.jab-history-top { display: flex; justify-content: space-between; align-items: baseline; }
+.jab-history-date { font-size: 13px; color: var(--text-dim); }
+.jab-history-dose { font-weight: 600; }
+.jab-history-site { font-size: 12.5px; color: var(--text-faint); margin-top: 2px; }
+.jab-history-weight { font-size: 12.5px; color: var(--text-dim); margin-top: 4px; }
+.jab-delta-up { color: var(--danger); }
+.jab-delta-down { color: var(--good); }
+
+.coach-msg { padding: 12px 14px; border-radius: var(--radius-md); margin-bottom: 10px; font-size: 14.5px; line-height: 1.45; max-width: 88%; }
+.coach-msg.ai { background: var(--surface-2); border: 1px solid var(--border); }
+.coach-msg.user { background: var(--grad); color: #0B0E13; margin-left: auto; font-weight: 500; }
+.coach-plan { border-left: 3px solid var(--blue); padding-left: 12px; margin: 10px 0; }
+.coach-plan .day { font-size: 12px; color: var(--pink); font-weight: 600; margin-top: 8px; }
+
+::-webkit-scrollbar { display: none; }
