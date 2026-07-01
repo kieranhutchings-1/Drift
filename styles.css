@@ -247,6 +247,120 @@ label { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; display: bl
 #coach-input { flex: 1; min-width: 0; }
 #coach-send { width: auto; flex: 0 0 auto; }
 
+/* ===== Today focus card ===== */
+.today-card {
+  background: linear-gradient(135deg, rgba(61,123,255,0.12), rgba(255,92,147,0.10));
+  border-color: rgba(255,92,147,0.2);
+  margin-bottom: 16px;
+}
+.today-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--pink);
+  margin-bottom: 6px;
+}
+.today-msg {
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* ===== Check-in nudge ===== */
+.checkin-nudge {
+  padding: 14px 20px;
+  border-color: rgba(61,123,255,0.2);
+}
+
+/* ===== Check-in modal ===== */
+.checkin-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(11,14,19,0.82);
+  backdrop-filter: blur(6px);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+}
+.checkin-sheet {
+  width: 100%;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 24px 20px 40px;
+}
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 4px;
+}
+.slider-emoji { font-size: 18px; flex-shrink: 0; }
+.drift-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--blue), var(--pink));
+  outline: none;
+  padding: 0;
+  border: none;
+}
+.drift-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--text);
+  cursor: pointer;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.4);
+}
+.slider-val { font-size: 12px; color: var(--text-dim); text-align: right; }
+
+/* ===== Weight velocity ===== */
+.velocity-label { font-size: 11px; color: var(--text-faint); margin-top: 8px; }
+
+/* ===== Insights ===== */
+.insight-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  align-items: flex-start;
+}
+.insight-item:last-child { border-bottom: none; }
+.insight-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pink); flex-shrink: 0; margin-top: 5px; }
+.insight-text { font-size: 13.5px; line-height: 1.4; color: var(--text-dim); }
+.insight-text strong { color: var(--text); }
+
+/* ===== Workouts ===== */
+.workout-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.workout-item:last-child { border-bottom: none; }
+.workout-icon {
+  width: 40px; height: 40px;
+  border-radius: var(--radius-sm);
+  background: rgba(61,123,255,0.1);
+  border: 1px solid rgba(61,123,255,0.2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+.workout-info { flex: 1; min-width: 0; }
+.workout-name { font-size: 14px; font-weight: 600; }
+.workout-stats { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.workout-strain {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--pink);
+}
+
 /* ===== Milestones ===== */
 .milestone-row {
   display: flex;
@@ -355,6 +469,24 @@ label { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; display: bl
 .coach-msg { padding: 12px 14px; border-radius: var(--radius-md); margin-bottom: 10px; font-size: 14.5px; line-height: 1.45; max-width: 88%; }
 .coach-msg.ai { background: var(--surface-2); border: 1px solid var(--border); }
 .coach-msg.user { background: var(--grad); color: #0B0E13; margin-left: auto; font-weight: 500; }
+.coach-msg strong { color: var(--text); font-weight: 700; }
+.coach-msg em { color: var(--text-dim); font-style: italic; }
+.coach-msg .coach-h2 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  font-size: 15.5px;
+  color: var(--text);
+  margin: 2px 0 8px;
+}
+.coach-msg .coach-h3 {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--pink);
+  margin: 8px 0 4px;
+}
+.coach-msg .coach-list { margin: 4px 0 6px 4px; padding-left: 16px; }
+.coach-msg .coach-list li { margin-bottom: 5px; padding-left: 2px; }
+.coach-msg .coach-list li::marker { color: var(--pink); }
 .coach-plan { border-left: 3px solid var(--blue); padding-left: 12px; margin: 10px 0; }
 .coach-plan .day { font-size: 12px; color: var(--pink); font-weight: 600; margin-top: 8px; }
 

@@ -4,6 +4,12 @@
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 
+/* ---- Backend connection defaults — pre-fill so a fresh install just works ---- */
+const BACKEND_DEFAULTS = {
+  workerUrl: 'https://drift-backend.kieranhutchings.workers.dev',
+  sharedKey: '5d049d5520e4cc81ee79826cbd914362dfe9919e1103cfc9'
+};
+
 /* ---- Keep the page from drifting when the iOS keyboard opens ----
    The viewport meta's interactive-widget=resizes-content (set in index.html)
    does the real work on modern iOS: it actually resizes the visible area
@@ -32,7 +38,8 @@ const KEYS = {
   jabConfig: 'drift_jab_config', // {name, doseMg, intervalDays, halfLifeDays, site}
   milestonesSeen: 'drift_milestones_seen', // [id, id, ...]
   plateauNotified: 'drift_plateau_notified', // boolean
-  whoopConfig: 'drift_whoop_config' // {workerUrl, sharedKey}
+  whoopConfig: 'drift_whoop_config', // {workerUrl, sharedKey}
+  checkIns: 'drift_checkins' // [{id, date, energy, appetite, note}]
 };
 
 const store = {
@@ -53,7 +60,8 @@ let state = {
   jabConfig: store.get(KEYS.jabConfig, { name: 'Tirzepatide', doseMg: 7.5, intervalDays: 7, halfLifeDays: 5, site: 'Stomach – upper left' }),
   milestonesSeen: store.get(KEYS.milestonesSeen, []),
   plateauNotified: store.get(KEYS.plateauNotified, false),
-  whoopConfig: store.get(KEYS.whoopConfig, { workerUrl: '', sharedKey: '' })
+  whoopConfig: store.get(KEYS.whoopConfig, BACKEND_DEFAULTS),
+  checkIns: store.get(KEYS.checkIns, [])
 };
 
 function persist(key) {
@@ -62,7 +70,8 @@ function persist(key) {
     whoop: KEYS.whoop, apikey: KEYS.apikey, coachHistory: KEYS.coachHistory,
     jabs: KEYS.jabs, jabConfig: KEYS.jabConfig,
     milestonesSeen: KEYS.milestonesSeen, plateauNotified: KEYS.plateauNotified,
-    whoopConfig: KEYS.whoopConfig
+    whoopConfig: KEYS.whoopConfig,
+    checkIns: KEYS.checkIns
   };
   store.set(map[key], state[key]);
   // whoopConfig is what tells us WHERE the backend is — can't be synced through
@@ -99,7 +108,7 @@ function renderHome() {
 
   const streakCount = computeStreak();
   document.getElementById('home-streak').textContent = state.jabs.length
-    ? `${streakCount} ${streakCount === 1 ? 'jab' : 'jabs'} on track`
+    ? `${streakCount} ${streakCount === 1 ? 'dose' : 'doses'} on track`
     : `${streakCount} ${streakCount === 1 ? 'week' : 'weeks'} logged`;
 
   renderGoalRing();
@@ -254,6 +263,7 @@ function renderWhoopDetail() {
   renderWhoopTabs();
   renderWhoopChartAndStats();
   renderWhoopDayList();
+  renderWorkouts();
 }
 
 function renderWhoopTabs() {
@@ -373,6 +383,288 @@ function renderWhoopDayList() {
   `).join('');
 }
 
+/* ===================== TODAY FOCUS CARD ===================== */
+function renderTodayCard() {
+  const el = document.getElementById('today-msg');
+  const parts = [];
+
+  // Recovery status
+  const whoopDays = state.whoop && state.whoop.days ? [...state.whoop.days].sort((a, b) => a.date.localeCompare(b.date)) : [];
+  const lastDay = whoopDays.at(-1);
+  if (lastDay && lastDay.recovery !== null) {
+    const r = lastDay.recovery;
+    if (r >= 67) parts.push(`Recovery ${Math.round(r)}% — your body is primed`);
+    else if (r >= 34) parts.push(`Recovery ${Math.round(r)}% — moderate energy today`);
+    else parts.push(`Recovery ${Math.round(r)}% — your body needs rest today`);
+  }
+
+  // Medication timing
+  if (state.jabs.length) {
+    const last = sortedJabs().at(-1);
+    const due = new Date(last.date + 'T00:00:00');
+    due.setDate(due.getDate() + (state.jabConfig.intervalDays || 7));
+    const daysLeft = Math.round(daysBetween(todayStr(), due.toISOString().slice(0, 10)));
+    if (daysLeft === 0) parts.push('dose due today');
+    else if (daysLeft === 1) parts.push('dose due tomorrow');
+    else if (daysLeft < 0) parts.push(`dose ${-daysLeft}d overdue`);
+    else parts.push(`dose in ${daysLeft}d`);
+  }
+
+  // Weight trend
+  const sorted = [...state.weights].sort((a, b) => a.date.localeCompare(b.date));
+  if (sorted.length >= 3) {
+    const recent = sorted.slice(-3);
+    const delta = recent.at(-1).kg - recent[0].kg;
+    if (delta < -0.3) parts.push(`weight trending down ${Math.abs(delta).toFixed(1)}kg`);
+    else if (delta > 0.3) parts.push(`weight up ${delta.toFixed(1)}kg recently`);
+    else parts.push('weight holding steady');
+  }
+
+  // Last check-in energy
+  const thisWeekCI = checkInThisWeek();
+  if (thisWeekCI) {
+    const energyLabels = ['', 'low energy', 'below average', 'average energy', 'good energy', 'high energy'];
+    parts.push(energyLabels[thisWeekCI.energy] || '');
+  }
+
+  if (!parts.length) {
+    el.textContent = 'Set a goal, log your weight, and connect Whoop to get your daily focus.';
+    return;
+  }
+
+  // Build the sentence
+  const [first, ...rest] = parts.filter(Boolean);
+  const sentence = rest.length
+    ? `${capitalise(first)} — ${rest.join(', ')}.`
+    : `${capitalise(first)}.`;
+  el.textContent = sentence;
+}
+function capitalise(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+/* ===================== WEIGHT VELOCITY ===================== */
+function renderVelocityChart() {
+  const svg = document.getElementById('velocity-chart');
+  const label = document.getElementById('velocity-label');
+  const sorted = [...state.weights].sort((a, b) => a.date.localeCompare(b.date));
+
+  if (sorted.length < 3) { svg.innerHTML = ''; label.textContent = ''; return; }
+
+  // Compute kg/week between consecutive entries
+  const velocities = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const days = Math.max(1, daysBetween(sorted[i - 1].date, sorted[i].date));
+    const delta = sorted[i].kg - sorted[i - 1].kg;
+    const kgPerWeek = (delta / days) * 7;
+    velocities.push({ date: sorted[i].date, kgPerWeek });
+  }
+
+  const recent = velocities.slice(-10);
+  const avg = recent.reduce((s, v) => s + v.kgPerWeek, 0) / recent.length;
+  label.textContent = `Rate of change — avg ${avg >= 0 ? '+' : ''}${avg.toFixed(2)} kg/week`;
+
+  const w = 390, h = 60, pad = 6;
+  const max = Math.max(...recent.map((v) => Math.abs(v.kgPerWeek)), 0.5);
+  const midY = h / 2;
+  const barW = Math.max(4, (w - pad * 2) / recent.length - 3);
+  const xStep = (w - pad * 2) / (recent.length);
+
+  svg.innerHTML = `
+    <line x1="${pad}" y1="${midY}" x2="${w - pad}" y2="${midY}" stroke="#232938" stroke-width="1"/>
+    ${recent.map((v, i) => {
+      const x = pad + i * xStep + xStep / 2 - barW / 2;
+      const barH = Math.max(3, (Math.abs(v.kgPerWeek) / max) * (midY - pad));
+      const y = v.kgPerWeek <= 0 ? midY - barH : midY;
+      const fill = v.kgPerWeek < -0.05 ? '#3DDC97' : v.kgPerWeek > 0.05 ? '#FF6B6B' : '#555E70';
+      return `<rect x="${x}" y="${v.kgPerWeek <= 0 ? midY - barH : midY}" width="${barW}" height="${barH}" rx="2" fill="${fill}"/>`;
+    }).join('')}
+  `;
+}
+
+/* ===================== CORRELATION INSIGHTS ===================== */
+function computeInsights() {
+  const insights = [];
+  const whoopDays = state.whoop && state.whoop.days ? [...state.whoop.days].sort((a, b) => a.date.localeCompare(b.date)) : [];
+  const weights = [...state.weights].sort((a, b) => a.date.localeCompare(b.date));
+
+  if (whoopDays.length < 14) return insights;
+
+  // Insight 1: Recovery after dose
+  if (state.jabs.length >= 2) {
+    const jabDates = sortedJabs().map((j) => j.date);
+    const daysAfterDose = [1, 2, 3, 4, 5, 6];
+    const recByDay = {};
+    daysAfterDose.forEach((d) => { recByDay[d] = []; });
+    jabDates.forEach((jabDate) => {
+      daysAfterDose.forEach((d) => {
+        const targetDate = new Date(jabDate + 'T00:00:00');
+        targetDate.setDate(targetDate.getDate() + d);
+        const ds = targetDate.toISOString().slice(0, 10);
+        const match = whoopDays.find((w) => w.date === ds);
+        if (match && match.recovery !== null) recByDay[d].push(match.recovery);
+      });
+    });
+    const day1_3 = [...(recByDay[1] || []), ...(recByDay[2] || []), ...(recByDay[3] || [])];
+    const day4_7 = [...(recByDay[4] || []), ...(recByDay[5] || []), ...(recByDay[6] || [])];
+    if (day1_3.length >= 2 && day4_7.length >= 2) {
+      const avg13 = day1_3.reduce((s, v) => s + v, 0) / day1_3.length;
+      const avg47 = day4_7.reduce((s, v) => s + v, 0) / day4_7.length;
+      const diff = avg47 - avg13;
+      if (Math.abs(diff) >= 6) {
+        insights.push(`Your recovery tends to be <strong>${diff > 0 ? 'lower days 1–3 after a dose' : 'lower days 4–7 after a dose'}</strong> (avg ${num(Math.min(avg13, avg47))}% vs ${num(Math.max(avg13, avg47))}%). Worth timing hard efforts accordingly.`);
+      }
+    }
+  }
+
+  // Insight 2: Sleep vs next-day recovery
+  const sleepRecPairs = [];
+  for (let i = 0; i < whoopDays.length - 1; i++) {
+    const d = whoopDays[i], next = whoopDays[i + 1];
+    if (d.sleep !== null && next.recovery !== null) sleepRecPairs.push({ sleep: d.sleep, recovery: next.recovery });
+  }
+  if (sleepRecPairs.length >= 10) {
+    const good = sleepRecPairs.filter((p) => p.sleep >= 75);
+    const poor = sleepRecPairs.filter((p) => p.sleep < 55);
+    if (good.length >= 4 && poor.length >= 4) {
+      const avgGood = good.reduce((s, p) => s + p.recovery, 0) / good.length;
+      const avgPoor = poor.reduce((s, p) => s + p.recovery, 0) / poor.length;
+      const diff = avgGood - avgPoor;
+      if (diff >= 8) {
+        insights.push(`Nights with <strong>sleep performance above 75%</strong> are followed by ${num(diff)} points higher recovery on average (${num(avgGood)}% vs ${num(avgPoor)}%). Sleep is your biggest recovery lever.`);
+      }
+    }
+  }
+
+  // Insight 3: Recovery vs weight loss rate
+  if (weights.length >= 6 && whoopDays.length >= 21) {
+    const pairs = [];
+    for (let i = 1; i < weights.length; i++) {
+      const days = Math.max(1, daysBetween(weights[i - 1].date, weights[i].date));
+      const delta = weights[i].kg - weights[i - 1].kg;
+      const kgPerWeek = (delta / days) * 7;
+      const weekDays = whoopDays.filter((d) => d.date >= weights[i - 1].date && d.date <= weights[i].date && d.recovery !== null);
+      if (weekDays.length >= 3) {
+        const avgRec = weekDays.reduce((s, d) => s + d.recovery, 0) / weekDays.length;
+        pairs.push({ kgPerWeek, avgRec });
+      }
+    }
+    if (pairs.length >= 4) {
+      const goodRec = pairs.filter((p) => p.avgRec >= 60);
+      const poorRec = pairs.filter((p) => p.avgRec < 50);
+      if (goodRec.length >= 2 && poorRec.length >= 2) {
+        const avgLossGood = goodRec.reduce((s, p) => s + p.kgPerWeek, 0) / goodRec.length;
+        const avgLossPoor = poorRec.reduce((s, p) => s + p.kgPerWeek, 0) / poorRec.length;
+        if (avgLossGood < avgLossPoor - 0.1) {
+          insights.push(`Weeks with <strong>recovery above 60%</strong> tend to show better weight progression (${num(Math.abs(avgLossGood))} kg/week vs ${num(Math.abs(avgLossPoor))} kg/week when recovery is low). Your body responds better when it's well-rested.`);
+        }
+      }
+    }
+  }
+
+  // Insight 4: High strain and next-day HRV
+  const strainHrvPairs = [];
+  for (let i = 0; i < whoopDays.length - 1; i++) {
+    const d = whoopDays[i], next = whoopDays[i + 1];
+    if (d.strain !== null && next.hrv !== null) strainHrvPairs.push({ strain: d.strain, hrv: next.hrv });
+  }
+  if (strainHrvPairs.length >= 10) {
+    const high = strainHrvPairs.filter((p) => p.strain >= 14);
+    const low = strainHrvPairs.filter((p) => p.strain < 8);
+    if (high.length >= 3 && low.length >= 3) {
+      const avgHrvHigh = high.reduce((s, p) => s + p.hrv, 0) / high.length;
+      const avgHrvLow = low.reduce((s, p) => s + p.hrv, 0) / low.length;
+      const diff = avgHrvHigh - avgHrvLow;
+      if (Math.abs(diff) >= 5) {
+        insights.push(`After <strong>high-strain days (14+)</strong>, your next-day HRV averages ${num(avgHrvHigh)}ms vs ${num(avgHrvLow)}ms after rest days. ${diff < 0 ? "Hard efforts suppress HRV — factor that into back-to-back days." : "Your HRV actually holds well after effort — a good sign of fitness."}`);
+      }
+    }
+  }
+
+  return insights;
+}
+
+function renderInsights() {
+  const card = document.getElementById('insights-card');
+  const list = document.getElementById('insights-list');
+  const insights = computeInsights();
+  if (!insights.length) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  list.innerHTML = insights.map((text) => `
+    <div class="insight-item">
+      <div class="insight-dot"></div>
+      <div class="insight-text">${text}</div>
+    </div>
+  `).join('');
+}
+
+/* ===================== CHECK-IN SYSTEM ===================== */
+function checkInThisWeek() {
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+  const ws = weekStart.toISOString().slice(0, 10);
+  return state.checkIns.find((c) => c.date >= ws) || null;
+}
+
+function renderCheckInNudge() {
+  const nudge = document.getElementById('checkin-nudge');
+  nudge.style.display = checkInThisWeek() ? 'none' : 'block';
+}
+
+document.getElementById('btn-open-checkin').addEventListener('click', () => {
+  document.getElementById('checkin-modal').style.display = 'flex';
+});
+document.getElementById('btn-close-checkin').addEventListener('click', () => {
+  document.getElementById('checkin-modal').style.display = 'none';
+});
+
+const energySlider = document.getElementById('ci-energy');
+const appetiteSlider = document.getElementById('ci-appetite');
+energySlider.addEventListener('input', () => { document.getElementById('ci-energy-val').textContent = `${energySlider.value} / 5`; });
+appetiteSlider.addEventListener('input', () => { document.getElementById('ci-appetite-val').textContent = `${appetiteSlider.value} / 5`; });
+
+document.getElementById('btn-save-checkin').addEventListener('click', () => {
+  const ci = {
+    id: uid(),
+    date: todayStr(),
+    energy: parseInt(energySlider.value),
+    appetite: parseInt(appetiteSlider.value),
+    note: document.getElementById('ci-note').value.trim()
+  };
+  state.checkIns.push(ci);
+  persist('checkIns');
+  document.getElementById('checkin-modal').style.display = 'none';
+  document.getElementById('ci-note').value = '';
+  renderAll();
+  toast('Check-in saved');
+});
+
+/* ===================== WORKOUT DISPLAY ===================== */
+const SPORT_EMOJI = { 'Running':'🏃','Cycling':'🚴','Walking':'🚶','Hiking':'🥾','Swimming':'🏊','Weightlifting':'🏋️','CrossFit':'💪','Yoga':'🧘','Basketball':'🏀','Soccer':'⚽','Tennis':'🎾','Rowing':'🚣','Activity':'⚡' };
+
+function renderWorkouts() {
+  const workouts = state.whoop && state.whoop.workouts ? state.whoop.workouts : [];
+  const card = document.getElementById('workouts-card');
+  const list = document.getElementById('workouts-list');
+  if (!workouts.length) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  list.innerHTML = workouts.slice(0, 20).map((w) => {
+    const emoji = SPORT_EMOJI[w.sport] || '⚡';
+    const duration = w.duration_mins ? `${Math.round(w.duration_mins)}m` : '';
+    const hr = w.avg_hr ? `${Math.round(w.avg_hr)} avg bpm` : '';
+    const cals = w.calories ? `${Math.round(w.calories)} kcal` : '';
+    const stats = [duration, hr, cals].filter(Boolean).join(' · ');
+    return `
+      <div class="workout-item">
+        <div class="workout-icon">${emoji}</div>
+        <div class="workout-info">
+          <div class="workout-name">${w.sport}</div>
+          <div class="workout-stats">${fmtDate(w.date)}${stats ? ' · ' + stats : ''}</div>
+        </div>
+        <div class="workout-strain">${num(w.strain)}</div>
+      </div>
+    `;
+  }).join('');
+}
+
 /* ===================== LOG screen ===================== */
 function renderWeightHistory() {
   const wrap = document.getElementById('weight-history');
@@ -469,7 +761,8 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   state = {
     weights: [], goal: null, whoop: null, apikey: '', coachHistory: [],
     jabs: [], jabConfig: { name: 'Tirzepatide', doseMg: 7.5, intervalDays: 7, halfLifeDays: 5, site: 'Stomach – upper left' },
-    milestonesSeen: [], plateauNotified: false
+    milestonesSeen: [], plateauNotified: false, whoopConfig: { ...BACKEND_DEFAULTS },
+    checkIns: []
   };
   renderAll();
   toast('All data erased');
@@ -481,8 +774,8 @@ function whoopBase() {
 }
 
 function renderWhoopSettingsFields() {
-  document.getElementById('whoop-worker-url').value = state.whoopConfig.workerUrl || '';
-  document.getElementById('whoop-shared-key').value = state.whoopConfig.sharedKey || '';
+  document.getElementById('whoop-worker-url').value = state.whoopConfig.workerUrl || BACKEND_DEFAULTS.workerUrl;
+  document.getElementById('whoop-shared-key').value = state.whoopConfig.sharedKey || BACKEND_DEFAULTS.sharedKey;
 }
 
 document.getElementById('btn-save-whoop-config').addEventListener('click', () => {
@@ -530,10 +823,14 @@ async function syncWhoop(showToast) {
       return;
     }
     const data = await res.json();
-    state.whoop = { importedAt: new Date().toISOString(), days: data.days || [] };
+    state.whoop = {
+      importedAt: new Date().toISOString(),
+      days: data.days || [],
+      workouts: data.workouts || state.whoop?.workouts || []
+    };
     persist('whoop');
     renderAll();
-    if (showToast) toast(`Synced — ${data.synced} days updated`);
+    if (showToast) toast(`Synced — ${data.synced || 0} days updated`);
   } catch {
     if (showToast) toast('Could not reach your Whoop backend');
   }
@@ -564,7 +861,11 @@ async function backfillWhoopHistory() {
       }
       const data = await res.json();
       totalFetched += data.fetched || 0;
-      state.whoop = { importedAt: new Date().toISOString(), days: data.days || [] };
+      state.whoop = {
+        importedAt: new Date().toISOString(),
+        days: data.days || [],
+        workouts: data.workouts || state.whoop?.workouts || []
+      };
       persist('whoop');
       renderHome();
       if (document.getElementById('screen-whoop-detail').classList.contains('active')) renderWhoopDetail();
@@ -592,7 +893,7 @@ async function backfillWhoopHistory() {
 // of truth (if one exists) so a reinstalled or new device picks up right
 // where you left off.
 
-const SYNCED_KEYS = ['weights', 'goal', 'jabs', 'jabConfig', 'milestonesSeen', 'plateauNotified', 'coachHistory', 'apikey'];
+const SYNCED_KEYS = ['weights', 'goal', 'jabs', 'jabConfig', 'milestonesSeen', 'plateauNotified', 'coachHistory', 'apikey', 'checkIns'];
 let pushStateTimer = null;
 
 function pushStateDebounced() {
@@ -778,7 +1079,7 @@ function renderJabs() {
     const daysLeft = Math.round(daysBetween(todayStr(), dueStr));
     document.getElementById('jab-due-pill').textContent = daysLeft > 0 ? `due in ${daysLeft}d` : daysLeft === 0 ? 'due today' : `overdue ${-daysLeft}d`;
   } else {
-    document.getElementById('jab-due-pill').textContent = 'no jabs yet';
+    document.getElementById('jab-due-pill').textContent = 'no doses yet';
   }
   document.getElementById('jab-next-dose').textContent = `${state.jabConfig.doseMg}mg ${state.jabConfig.name}`;
   document.getElementById('jab-next-site').textContent = state.jabConfig.site || '';
@@ -812,7 +1113,7 @@ function renderDecayChart() {
   const w = 390, h = 160;
   const padL = 8, padR = 8, padTop = 38, padBottom = 24;
   if (!state.jabs.length) {
-    svg.innerHTML = `<text x="195" y="84" fill="#555E70" font-size="12" text-anchor="middle" font-family="Inter">log your first jab to see this</text>`;
+    svg.innerHTML = `<text x="195" y="84" fill="#555E70" font-size="12" text-anchor="middle" font-family="Inter">log your first dose to see this</text>`;
     return;
   }
 
@@ -875,7 +1176,7 @@ function renderDecayChart() {
 
     ${markerX !== null ? `
       <text x="${Math.min(Math.max(markerX, 38), w - 60)}" y="${padTop - 22}" fill="#F2F4F8" font-size="12" font-weight="600" text-anchor="middle" font-family="Inter">${fmtShort(lastJab.date)}</text>
-      <text x="${Math.min(Math.max(markerX, 38), w - 60)}" y="${padTop - 8}" fill="#8B93A7" font-size="10.5" text-anchor="middle" font-family="JetBrains Mono">Jab ${jabs.length}</text>
+      <text x="${Math.min(Math.max(markerX, 38), w - 60)}" y="${padTop - 8}" fill="#8B93A7" font-size="10.5" text-anchor="middle" font-family="JetBrains Mono">Dose ${jabs.length}</text>
     ` : ''}
 
     <text x="${padL}" y="${padTop - 22}" fill="#8B93A7" font-size="11.5" text-anchor="start" font-family="JetBrains Mono">${peakMg.toFixed(1)}mg (est)</text>
@@ -889,7 +1190,7 @@ function renderDecayChart() {
 function renderJabHistory() {
   const wrap = document.getElementById('jab-history');
   const jabs = sortedJabs().reverse();
-  if (!jabs.length) { wrap.innerHTML = `<div class="empty-state">No jabs logged yet.</div>`; return; }
+  if (!jabs.length) { wrap.innerHTML = `<div class="empty-state">No doses logged yet.</div>`; return; }
   let prevWeight = null;
   // compute deltas in chronological order first
   const chrono = [...jabs].reverse();
@@ -928,18 +1229,18 @@ function renderJabHistory() {
 }
 
 document.getElementById('btn-log-jab').addEventListener('click', () => {
-  const date = prompt('Date of jab (YYYY-MM-DD)?', todayStr()) || todayStr();
+  const date = prompt('Date of dose (YYYY-MM-DD)?', todayStr()) || todayStr();
   const doseMg = parseFloat(prompt('Dose (mg)?', state.jabConfig.doseMg)) || state.jabConfig.doseMg;
   const site = prompt('Injection site?', state.jabConfig.site) || state.jabConfig.site;
   state.jabs.push({ id: uid(), date, doseMg, site });
   persist('jabs');
-  const logWeight = confirm('Log a weight for this jab too?');
+  const logWeight = confirm('Log a weight for this dose too?');
   if (logWeight) {
     const kg = parseFloat(prompt('Weight in kg?'));
     if (kg && !isNaN(kg)) { state.weights.push({ id: uid(), date, kg }); persist('weights'); }
   }
   renderAll();
-  toast('Jab logged');
+  toast('Dose logged');
 });
 
 document.getElementById('btn-jab-settings').addEventListener('click', () => goTo('settings'));
@@ -961,7 +1262,7 @@ document.getElementById('btn-save-jab-settings').addEventListener('click', () =>
   };
   persist('jabConfig');
   renderAll();
-  toast('Jab settings saved');
+  toast('Medication settings saved');
 });
 
 /* ===================== MILESTONES ===================== */
@@ -993,9 +1294,9 @@ const MILESTONES = [
   { id: 'weigh_4', label: '4 weigh-ins logged', icon: 'scale', check: () => state.weights.length >= 4 },
   { id: 'weigh_12', label: '12 weigh-ins logged', icon: 'scale', check: () => state.weights.length >= 12 },
   { id: 'goal_set', label: 'Goal set', icon: 'flag', check: () => !!(state.goal && state.goal.goal) },
-  { id: 'first_jab', label: 'First jab logged', icon: 'jab', check: () => state.jabs.length >= 1 },
-  { id: 'jab_streak_4', label: '4 jabs on schedule', icon: 'jab', check: () => jabStreak() >= 4 },
-  { id: 'jab_streak_12', label: '12 jabs on schedule', icon: 'jab', check: () => jabStreak() >= 12 },
+  { id: 'first_jab', label: 'First dose logged', icon: 'jab', check: () => state.jabs.length >= 1 },
+  { id: 'jab_streak_4', label: '4 doses on schedule', icon: 'jab', check: () => jabStreak() >= 4 },
+  { id: 'jab_streak_12', label: '12 doses on schedule', icon: 'jab', check: () => jabStreak() >= 12 },
   { id: 'change_5', label: '5% change reached', icon: 'star', check: () => { const p = pctChangeFromGoalStart(); return p !== null && Math.abs(p) >= 5; } },
   { id: 'change_10', label: '10% change reached', icon: 'star', check: () => { const p = pctChangeFromGoalStart(); return p !== null && Math.abs(p) >= 10; } },
   { id: 'three_months', label: '3 months in Drift', icon: 'clock', check: () => { const e = earliestRecordDate(); return e && daysBetween(e, todayStr()) >= 90; } },
@@ -1070,7 +1371,7 @@ function renderPlateau() {
   card.style.display = 'block';
   document.getElementById('plateau-weeks').textContent = p.weeks;
   document.getElementById('plateau-detail').textContent =
-    `Your weight has stayed within ${p.range.toFixed(1)}kg for about ${p.weeks} weeks. That's normal — bodies hold steady sometimes, especially with consistent training. Worth checking: recovery trend, sleep, and whether your jab schedule has stayed consistent, before changing anything drastically.`;
+    `Your weight has stayed within ${p.range.toFixed(1)}kg for about ${p.weeks} weeks. That's normal — bodies hold steady sometimes, especially with consistent training. Worth checking: recovery trend, sleep, and whether your medication schedule has stayed consistent, before changing anything drastically.`;
 
   document.getElementById('plateau-pill').style.display = 'inline-flex';
   document.getElementById('plateau-pill').textContent = `steady ${p.weeks}w`;
@@ -1172,9 +1473,32 @@ function renderCoachStatus() {
 }
 function renderCoachChat() {
   const wrap = document.getElementById('coach-chat');
-  wrap.innerHTML = state.coachHistory.map((m) => `<div class="coach-msg ${m.role === 'user' ? 'user' : 'ai'}">${esc(m.text)}</div>`).join('');
+  wrap.innerHTML = state.coachHistory.map((m) =>
+    `<div class="coach-msg ${m.role === 'user' ? 'user' : 'ai'}">${m.role === 'ai' ? renderMarkdownLite(m.text) : esc(m.text)}</div>`
+  ).join('');
   wrap.scrollTop = wrap.scrollHeight;
 }
+
+// Minimal, dependency-free markdown rendering for coach replies — escapes
+// everything first so the only HTML present is what we deliberately insert,
+// then handles headers, bold/italic, and bullet lists, which covers the vast
+// majority of how Claude formats short structured answers.
+function renderMarkdownLite(raw) {
+  let text = esc(raw);
+  text = text.replace(/^### (.*)$/gm, '<div class="coach-h3">$1</div>');
+  text = text.replace(/^## (.*)$/gm, '<div class="coach-h2">$1</div>');
+  text = text.replace(/^# (.*)$/gm, '<div class="coach-h2">$1</div>');
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+  text = text.replace(/(^|\n)((?:[-•] .*(?:\n|$))+)/g, (m, lead, block) => {
+    const items = block.trim().split('\n').map((l) => `<li>${l.replace(/^[-•]\s*/, '')}</li>`).join('');
+    return `${lead}<ul class="coach-list">${items}</ul>`;
+  });
+  text = text.replace(/\n/g, '<br>');
+  text = text.replace(/(<\/div>|<\/ul>)(<br>)+/g, '$1');
+  return text;
+}
+
 document.getElementById('coach-send').addEventListener('click', sendCoachMsg);
 document.getElementById('coach-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendCoachMsg(); });
 
@@ -1204,12 +1528,49 @@ async function sendCoachMsg() {
 }
 
 function buildContext() {
-  const latest = latestWeight();
-  const w = state.whoop && state.whoop.days.length ? [...state.whoop.days].sort((a,b)=>a.date.localeCompare(b.date)).at(-1) : null;
-  return `User context for coaching — goal: ${state.goal ? `${state.goal.start}kg -> ${state.goal.goal}kg` : 'not set'}. ` +
-    `Latest weight: ${latest ? `${latest.kg}kg on ${latest.date}` : 'none logged'}. ` +
-    `Latest Whoop: ${w ? `recovery ${num(w.recovery)}%, sleep ${num(w.sleep)}%, strain ${num(w.strain)}` : 'no Whoop data imported'}. ` +
-    `Jabs logged: ${state.jabs.length}${state.jabs.length ? ` (${state.jabConfig.name}, last on ${sortedJabs().at(-1).date})` : ''}.`;
+  const sortedW = [...state.weights].sort((a, b) => a.date.localeCompare(b.date));
+  const latest = sortedW.at(-1);
+  const first = sortedW[0];
+
+  const pctMoved = pctChangeFromGoalStart();
+  const goalLine = state.goal
+    ? `Goal: ${state.goal.start}kg -> ${state.goal.goal}kg${pctMoved !== null ? ` (${num(Math.abs(pctMoved))}% of body weight moved so far)` : ''}.`
+    : 'No weight goal set yet.';
+
+  const weightLine = latest
+    ? `Weight: latest ${latest.kg}kg on ${latest.date}${sortedW.length > 1 ? `, started tracking at ${first.kg}kg on ${first.date} (${sortedW.length} entries total)` : ''}.`
+    : 'No weight entries logged yet.';
+
+  let whoopLine = 'No Whoop data connected.';
+  if (state.whoop && state.whoop.days.length) {
+    const days = [...state.whoop.days].sort((a, b) => a.date.localeCompare(b.date));
+    const last = days.at(-1);
+    const avg = (arr, key) => { const v = arr.map((d) => d[key]).filter((x) => x !== null && x !== undefined); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
+    const last7 = avg(days.slice(-7), 'recovery');
+    const prev7 = avg(days.slice(-14, -7), 'recovery');
+    whoopLine = `Whoop today: recovery ${num(last.recovery)}%, sleep ${num(last.sleep)}%, strain ${num(last.strain)}, HRV ${num(last.hrv)}ms, RHR ${num(last.rhr)}bpm. ` +
+      `7-day avg recovery ${last7 !== null ? num(last7) + '%' : 'n/a'}${prev7 !== null ? ` vs ${num(prev7)}% the 7 days before that` : ''}. (${days.length} days of history synced.)`;
+  }
+
+  let jabLine = 'No medication doses logged yet.';
+  if (state.jabs.length) {
+    const jabs = sortedJabs();
+    const last = jabs.at(-1);
+    const due = new Date(last.date + 'T00:00:00');
+    due.setDate(due.getDate() + (state.jabConfig.intervalDays || 7));
+    jabLine = `${state.jabConfig.name}, ${state.jabConfig.doseMg}mg every ${state.jabConfig.intervalDays} days. Last dose ${last.date}, next due ${due.toISOString().slice(0, 10)}. ` +
+      `On-schedule streak: ${jabStreak()} doses in a row. ${jabs.length} total logged.`;
+  }
+
+  const plateau = detectPlateau();
+  const plateauLine = plateau ? `Plateau flag: weight has stayed within ${num(plateau.range)}kg for about ${plateau.weeks} weeks.` : '';
+
+  const thisCI = checkInThisWeek();
+  const ciLine = thisCI
+    ? `Weekly check-in (this week): energy ${thisCI.energy}/5, appetite ${thisCI.appetite}/5${thisCI.note ? `, note: "${thisCI.note}"` : ''}.`
+    : state.checkIns.length ? `Last check-in: energy ${state.checkIns.at(-1).energy}/5, appetite ${state.checkIns.at(-1).appetite}/5.` : '';
+
+  return [goalLine, weightLine, whoopLine, jabLine, plateauLine, ciLine].filter(Boolean).join(' ');
 }
 
 async function askClaude(userText) {
@@ -1223,8 +1584,8 @@ async function askClaude(userText) {
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 500,
-      system: `You are a supportive, practical lifestyle and fitness coach inside the Drift app. Be concise (3-6 sentences unless asked for a plan). Use the user's real data when given. ${buildContext()}`,
+      max_tokens: 650,
+      system: `You are Drift's AI coach — sharp, supportive, and direct, with full access to this person's real tracked data below. Always reference their actual numbers; never give generic advice that could apply to anyone. For substantive answers, use a short bold headline, then 2-4 bullet points citing specific figures, then one clear, concrete recommendation for today. Keep simple questions short (2-4 sentences, no headers needed). Don't just restate their numbers back — interpret them and say what to actually do. Avoid medical claims; you're a coach, not a clinician.\n\n${buildContext()}`,
       messages: [{ role: 'user', content: userText }]
     })
   });
@@ -1243,9 +1604,16 @@ function localCoachReply(text) {
     return `Use the "Build a plan" card above — pick Running or Walking, your level, and a goal, and I'll generate a 4-week progression. Add your own Anthropic API key in Settings for fully personalized AI coaching.`;
   }
   if (state.whoop && state.whoop.days.length) {
-    const w = [...state.whoop.days].sort((a,b)=>a.date.localeCompare(b.date)).at(-1);
+    const days = [...state.whoop.days].sort((a, b) => a.date.localeCompare(b.date));
+    const w = days.at(-1);
     if (lower.includes('recover') || lower.includes('stat') || lower.includes('whoop')) {
-      return `Your latest recovery is ${num(w.recovery)}%, sleep performance ${num(w.sleep)}%, strain ${num(w.strain)}. ${w.recovery < 40 ? "That's low — today's a good day to keep training light." : "That's a reasonable base to train normally on."}`;
+      const avg = (arr) => { const v = arr.map((d) => d.recovery).filter((x) => x !== null && x !== undefined); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
+      const last7 = avg(days.slice(-7));
+      const prev7 = avg(days.slice(-14, -7));
+      const trend = last7 !== null && prev7 !== null
+        ? ` Your 7-day average recovery is ${num(last7)}%, ${last7 > prev7 ? 'up' : last7 < prev7 ? 'down' : 'flat'} from ${num(prev7)}% the week before.`
+        : '';
+      return `Today: recovery ${num(w.recovery)}%, sleep ${num(w.sleep)}%, strain ${num(w.strain)}.${trend} ${w.recovery < 40 ? "That's low — today's a good day to keep training light." : "That's a reasonable base to train normally on."}`;
     }
   }
   if (latest && state.goal) {
@@ -1261,6 +1629,10 @@ function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':
 
 function renderAll() {
   renderHome();
+  renderTodayCard();
+  renderVelocityChart();
+  renderInsights();
+  renderCheckInNudge();
   renderWeightHistory();
   renderSettings();
   renderJabs();

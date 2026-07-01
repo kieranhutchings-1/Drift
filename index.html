@@ -33,7 +33,24 @@
         <img src="icons/wordmark.png" alt="Drift" class="home-logo">
         <div class="sub" id="home-date"></div>
       </div>
-      <div class="pill" id="home-streak">— day streak</div>
+      <div class="pill" id="home-streak">— weeks logged</div>
+    </div>
+
+    <!-- Today focus card -->
+    <div class="card today-card" id="today-card">
+      <div class="today-label">TODAY</div>
+      <div class="today-msg" id="today-msg">Set a goal and connect Whoop to see your daily focus.</div>
+    </div>
+
+    <!-- Weekly check-in nudge -->
+    <div class="card checkin-nudge" id="checkin-nudge" style="display:none;">
+      <div class="row">
+        <div class="stack" style="flex:1; min-width:0;">
+          <div style="font-size:13px; font-weight:600; color:var(--text);">Weekly check-in</div>
+          <div class="sub" style="font-size:12px;">How's this week feeling?</div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-open-checkin" style="flex:0 0 auto; width:auto;">Check in →</button>
+      </div>
     </div>
 
     <div class="card" style="text-align:center;">
@@ -66,6 +83,8 @@
         </div>
       </div>
       <div class="spark-wrap"><svg id="sparkline" width="100%" height="90" viewBox="0 0 390 90" preserveAspectRatio="none"></svg></div>
+      <div class="velocity-label" id="velocity-label"></div>
+      <div class="spark-wrap" style="height:60px; margin-top:4px;"><svg id="velocity-chart" width="100%" height="60" viewBox="0 0 390 60" preserveAspectRatio="none"></svg></div>
       <button class="btn btn-primary" id="btn-log-weight" style="margin-top:14px;">Log this week's weight</button>
     </div>
 
@@ -75,7 +94,12 @@
         <span class="pill" id="whoop-status">not connected</span>
       </div>
       <div id="whoop-summary" style="margin-top:10px;"></div>
-      <button class="btn btn-ghost btn-block btn-sm" id="btn-view-whoop-detail" style="margin-top:12px;">View by day</button>
+      <button class="btn btn-ghost btn-block btn-sm" id="btn-view-whoop-detail" style="margin-top:12px;">View trends</button>
+    </div>
+
+    <div class="card" id="insights-card" style="display:none;">
+      <div class="card-title">Patterns noticed</div>
+      <div id="insights-list"></div>
     </div>
 
     <div class="card">
@@ -103,13 +127,13 @@
   <!-- ============ JABS ============ -->
   <section class="screen" id="screen-jabs">
     <div class="screen-header">
-      <div><h1>Jabs</h1><div class="sub" id="jabs-sub">Tirzepatide</div></div>
+      <div><h1>Medication</h1><div class="sub" id="jabs-sub"></div></div>
       <button class="btn btn-ghost btn-sm" id="btn-jab-settings">Edit</button>
     </div>
 
     <div class="card jab-next">
       <div class="row" style="margin-bottom:10px;">
-        <div class="card-title" style="margin-bottom:0;">Next jab</div>
+        <div class="card-title" style="margin-bottom:0;">Next dose</div>
         <span class="pill" id="jab-due-pill">—</span>
       </div>
       <div class="row">
@@ -117,7 +141,7 @@
           <div class="display" id="jab-next-dose" style="font-size:20px;">—</div>
           <div class="sub" id="jab-next-site">—</div>
         </div>
-        <button class="btn btn-primary btn-sm" id="btn-log-jab">Log jab</button>
+        <button class="btn btn-primary btn-sm" id="btn-log-jab">Log dose</button>
       </div>
     </div>
 
@@ -130,8 +154,8 @@
     <div class="card">
       <div class="card-title">Total change</div>
       <div class="row">
-        <div class="stack"><span class="sub">Since first jab</span><span class="mono" id="jab-total-change" style="font-size:22px;">—</span></div>
-        <div class="stack" style="text-align:right;"><span class="sub">Jabs logged</span><span class="mono" id="jab-count" style="font-size:22px;">0</span></div>
+        <div class="stack"><span class="sub">Since first dose</span><span class="mono" id="jab-total-change" style="font-size:22px;">—</span></div>
+        <div class="stack" style="text-align:right;"><span class="sub">Doses logged</span><span class="mono" id="jab-count" style="font-size:22px;">0</span></div>
       </div>
     </div>
 
@@ -170,6 +194,11 @@
     <div class="card">
       <div class="card-title">History</div>
       <div id="whoop-detail-list"></div>
+    </div>
+
+    <div class="card" id="workouts-card" style="display:none;">
+      <div class="card-title">Workouts</div>
+      <div id="workouts-list"></div>
     </div>
   </section>
 
@@ -225,7 +254,7 @@
     </div>
 
     <div class="card" id="jab-settings-card">
-      <div class="card-title">Jab settings</div>
+      <div class="card-title">Medication settings</div>
       <div class="field"><label>Name</label><input id="jset-name" placeholder="Tirzepatide"></div>
       <div class="row" style="gap:10px;">
         <div class="field" style="flex:1;"><label>Dose (mg)</label><input type="number" id="jset-dose" step="0.25"></div>
@@ -258,7 +287,7 @@
         <div class="card-title" style="margin-bottom:0;">Reminders</div>
         <span class="pill" id="push-status">checking…</span>
       </div>
-      <div class="sub" style="margin-bottom:10px;">Nudges for a due jab or a missed weigh-in — checked once a day, only shown when something's actually due.</div>
+      <div class="sub" style="margin-bottom:10px;">Nudges for a due dose or a missed weigh-in — checked once a day, only shown when something's actually due.</div>
       <div class="row" style="gap:10px;">
         <button class="btn btn-primary btn-block btn-sm" id="btn-enable-push">Enable</button>
         <button class="btn btn-ghost btn-block btn-sm" id="btn-disable-push">Disable</button>
@@ -288,6 +317,39 @@
     </div>
   </section>
 
+  <!-- Check-in modal -->
+  <div id="checkin-modal" class="checkin-overlay" style="display:none;">
+    <div class="checkin-sheet">
+      <div class="row" style="margin-bottom:18px;">
+        <h2 style="font-size:20px; margin:0;">Weekly check-in</h2>
+        <button class="btn btn-ghost btn-sm" id="btn-close-checkin">✕</button>
+      </div>
+      <div class="field">
+        <label>Energy this week</label>
+        <div class="slider-row">
+          <span class="slider-emoji">😴</span>
+          <input type="range" id="ci-energy" min="1" max="5" value="3" class="drift-slider">
+          <span class="slider-emoji">⚡</span>
+        </div>
+        <div class="slider-val" id="ci-energy-val">3 / 5</div>
+      </div>
+      <div class="field">
+        <label>Appetite this week</label>
+        <div class="slider-row">
+          <span class="slider-emoji">🚫</span>
+          <input type="range" id="ci-appetite" min="1" max="5" value="3" class="drift-slider">
+          <span class="slider-emoji">🍽️</span>
+        </div>
+        <div class="slider-val" id="ci-appetite-val">3 / 5</div>
+      </div>
+      <div class="field">
+        <label>One thing you noticed this week <span class="sub">(optional)</span></label>
+        <textarea id="ci-note" rows="2" placeholder="e.g. felt strong on Tuesday, sleep was rough mid-week…" style="resize:none;"></textarea>
+      </div>
+      <button class="btn btn-primary btn-block" id="btn-save-checkin">Save check-in</button>
+    </div>
+  </div>
+
   <!-- ============ NAV ============ -->
   <nav id="nav">
     <button class="nav-btn active" data-screen="home">
@@ -300,7 +362,7 @@
     </button>
     <button class="nav-btn" data-screen="jabs">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 3l2 2-2 2M13 9l6-6M5 19l4-1 9-9-3-3-9 9-1 4z"/></svg>
-      Jabs
+      Meds
     </button>
     <button class="nav-btn" data-screen="coach">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
