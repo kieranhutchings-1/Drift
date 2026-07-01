@@ -89,11 +89,12 @@
     </div>
 
     <div class="card" id="home-whoop-card">
-      <div class="row">
+      <div class="row" style="margin-bottom:14px;">
         <div class="card-title" style="margin-bottom:0;">Whoop</div>
         <span class="pill" id="whoop-status">not connected</span>
       </div>
-      <div id="whoop-summary" style="margin-top:10px;"></div>
+      <div id="whoop-rings-row" class="whoop-rings-row"></div>
+      <div class="sub" id="whoop-latest-date" style="text-align:center; margin-top:10px;"></div>
       <button class="btn btn-ghost btn-block btn-sm" id="btn-view-whoop-detail" style="margin-top:12px;">View trends</button>
     </div>
 
@@ -133,7 +134,7 @@
 
     <div class="card jab-next">
       <div class="row" style="margin-bottom:10px;">
-        <div class="card-title" style="margin-bottom:0;">Next dose</div>
+        <div class="card-title" style="margin-bottom:0;">Next</div>
         <span class="pill" id="jab-due-pill">—</span>
       </div>
       <div class="row">
@@ -141,22 +142,28 @@
           <div class="display" id="jab-next-dose" style="font-size:20px;">—</div>
           <div class="sub" id="jab-next-site">—</div>
         </div>
-        <button class="btn btn-primary btn-sm" id="btn-log-jab">Log dose</button>
+        <button class="btn btn-primary btn-sm" id="btn-log-jab" style="flex:0 0 auto; width:auto;">Log</button>
       </div>
     </div>
 
     <div class="card">
       <div class="card-title">In your system</div>
       <div class="spark-wrap" style="height:160px;"><svg id="jab-decay-chart" width="100%" height="160" viewBox="0 0 390 160" preserveAspectRatio="none"></svg></div>
-      <div class="sub" style="margin-top:6px;">Estimate only, based on dose and half-life — not a clinical measurement.</div>
+      <div class="sub" style="margin-top:6px;">Estimated level — not a clinical measurement.</div>
     </div>
 
     <div class="card">
-      <div class="card-title">Total change</div>
+      <div class="card-title">Progress</div>
       <div class="row">
-        <div class="stack"><span class="sub">Since first dose</span><span class="mono" id="jab-total-change" style="font-size:22px;">—</span></div>
-        <div class="stack" style="text-align:right;"><span class="sub">Doses logged</span><span class="mono" id="jab-count" style="font-size:22px;">0</span></div>
+        <div class="stack"><span class="sub">Weight change</span><span class="mono" id="jab-total-change" style="font-size:22px;">—</span></div>
+        <div class="stack" style="text-align:right;"><span class="sub">Logged</span><span class="mono" id="jab-count" style="font-size:22px;">0</span></div>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Daily supplements</div>
+      <div id="supplement-list"></div>
+      <button class="btn btn-ghost btn-sm" id="btn-add-supplement" style="margin-top:10px;">+ Add supplement</button>
     </div>
 
     <div class="card">
@@ -287,7 +294,7 @@
         <div class="card-title" style="margin-bottom:0;">Reminders</div>
         <span class="pill" id="push-status">checking…</span>
       </div>
-      <div class="sub" style="margin-bottom:10px;">Nudges for a due dose or a missed weigh-in — checked once a day, only shown when something's actually due.</div>
+      <div class="sub" style="margin-bottom:10px;">Nudges for upcoming medication and missed weigh-ins — checked once a day, only shown when relevant.</div>
       <div class="row" style="gap:10px;">
         <button class="btn btn-primary btn-block btn-sm" id="btn-enable-push">Enable</button>
         <button class="btn btn-ghost btn-block btn-sm" id="btn-disable-push">Disable</button>

@@ -39,7 +39,8 @@ const KEYS = {
   milestonesSeen: 'drift_milestones_seen', // [id, id, ...]
   plateauNotified: 'drift_plateau_notified', // boolean
   whoopConfig: 'drift_whoop_config', // {workerUrl, sharedKey}
-  checkIns: 'drift_checkins' // [{id, date, energy, appetite, note}]
+  checkIns: 'drift_checkins', // [{id, date, energy, appetite, note}]
+  supplements: 'drift_supplements' // [{id, name, unit, log: {'YYYY-MM-DD': true}}]
 };
 
 const store = {
@@ -61,7 +62,8 @@ let state = {
   milestonesSeen: store.get(KEYS.milestonesSeen, []),
   plateauNotified: store.get(KEYS.plateauNotified, false),
   whoopConfig: store.get(KEYS.whoopConfig, BACKEND_DEFAULTS),
-  checkIns: store.get(KEYS.checkIns, [])
+  checkIns: store.get(KEYS.checkIns, []),
+  supplements: store.get(KEYS.supplements, [{ id: 'vitd', name: 'Vitamin D', unit: '1000 IU', log: {} }])
 };
 
 function persist(key) {
@@ -71,7 +73,8 @@ function persist(key) {
     jabs: KEYS.jabs, jabConfig: KEYS.jabConfig,
     milestonesSeen: KEYS.milestonesSeen, plateauNotified: KEYS.plateauNotified,
     whoopConfig: KEYS.whoopConfig,
-    checkIns: KEYS.checkIns
+    checkIns: KEYS.checkIns,
+    supplements: KEYS.supplements
   };
   store.set(map[key], state[key]);
   // whoopConfig is what tells us WHERE the backend is — can't be synced through
@@ -108,7 +111,7 @@ function renderHome() {
 
   const streakCount = computeStreak();
   document.getElementById('home-streak').textContent = state.jabs.length
-    ? `${streakCount} ${streakCount === 1 ? 'dose' : 'doses'} on track`
+    ? `${streakCount} on track`
     : `${streakCount} ${streakCount === 1 ? 'week' : 'weeks'} logged`;
 
   renderGoalRing();
@@ -208,22 +211,65 @@ function renderSparkline() {
 
 function renderWhoopHome() {
   const statusEl = document.getElementById('whoop-status');
-  const sumEl = document.getElementById('whoop-summary');
+  const ringsRow = document.getElementById('whoop-rings-row');
+  const dateEl = document.getElementById('whoop-latest-date');
+
   if (!state.whoop || !state.whoop.days || !state.whoop.days.length) {
     statusEl.textContent = 'not connected';
-    sumEl.innerHTML = `<div class="empty-state">Connect Whoop in Settings to see recovery & strain here.</div>`;
+    ringsRow.innerHTML = `<div class="empty-state" style="padding:16px 0;">Connect Whoop in Settings to see your recovery here.</div>`;
+    dateEl.textContent = '';
     return;
   }
-  statusEl.textContent = `${state.whoop.days.length} days synced`;
+
   const last = [...state.whoop.days].sort((a, b) => a.date.localeCompare(b.date)).at(-1);
-  sumEl.innerHTML = `
-    <div class="row">
-      <div class="stack"><span class="sub">Recovery</span><span class="mono" style="font-size:18px;">${num(last.recovery)}%</span></div>
-      <div class="stack"><span class="sub">Sleep</span><span class="mono" style="font-size:18px;">${num(last.sleep)}%</span></div>
-      <div class="stack"><span class="sub">Strain</span><span class="mono" style="font-size:18px;">${num(last.strain)}</span></div>
-    </div>
-    <div class="sub" style="margin-top:8px;">Latest: ${fmtDate(last.date)}</div>
-  `;
+  statusEl.textContent = `${state.whoop.days.length} days synced`;
+  dateEl.textContent = `Latest: ${fmtDate(last.date)}`;
+
+  // Build three rings: Recovery (large, centre), Sleep (left), Strain (right)
+  ringsRow.innerHTML = [
+    makeWhoopRing('Sleep', last.sleep, 100, 56, 8, sleepColor(last.sleep), '%'),
+    makeWhoopRing('Recovery', last.recovery, 100, 72, 10, recoveryColor(last.recovery), '%', true),
+    makeWhoopRing('Strain', last.strain, 21, 56, 8, strainColor(last.strain), '')
+  ].join('');
+}
+
+function makeWhoopRing(label, value, max, size, strokeW, color, unit, large) {
+  const r = (size - strokeW * 2) / 2;
+  const circ = 2 * Math.PI * r;
+  const pct = value !== null && value !== undefined ? Math.min(Math.max(value / max, 0), 1) : 0;
+  const offset = circ * (1 - pct);
+  const valStr = value !== null && value !== undefined ? (Number.isInteger(value) ? value : num(value)) : '—';
+  const fontSize = large ? 20 : 15;
+  return `
+    <div class="whoop-ring-item">
+      <div class="whoop-ring-wrap" style="width:${size}px;height:${size}px;">
+        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+          <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="${strokeW}"/>
+          <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}"
+            stroke-width="${strokeW}" stroke-linecap="round"
+            stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
+            ${pct === 0 ? 'opacity="0"' : ''}/>
+        </svg>
+        <div class="whoop-ring-center">
+          <span class="whoop-ring-val" style="font-size:${fontSize}px; color:${color};">${valStr}</span>
+          ${unit ? `<span class="whoop-ring-unit">${unit}</span>` : ''}
+        </div>
+      </div>
+      <div class="whoop-ring-label">${label}</div>
+    </div>`;
+}
+
+function sleepColor(v) {
+  if (v === null || v === undefined) return 'var(--surface-2)';
+  if (v >= 75) return 'var(--good)';
+  if (v >= 50) return 'var(--amber)';
+  return 'var(--danger)';
+}
+function strainColor(v) {
+  if (v === null || v === undefined) return 'var(--surface-2)';
+  if (v >= 14) return 'var(--danger)';
+  if (v >= 8) return 'var(--amber)';
+  return '#3D7BFF';
 }
 function num(v) { return (v === undefined || v === null || isNaN(v)) ? '—' : (Math.round(v * 10) / 10); }
 
@@ -398,17 +444,7 @@ function renderTodayCard() {
     else parts.push(`Recovery ${Math.round(r)}% — your body needs rest today`);
   }
 
-  // Medication timing
-  if (state.jabs.length) {
-    const last = sortedJabs().at(-1);
-    const due = new Date(last.date + 'T00:00:00');
-    due.setDate(due.getDate() + (state.jabConfig.intervalDays || 7));
-    const daysLeft = Math.round(daysBetween(todayStr(), due.toISOString().slice(0, 10)));
-    if (daysLeft === 0) parts.push('dose due today');
-    else if (daysLeft === 1) parts.push('dose due tomorrow');
-    else if (daysLeft < 0) parts.push(`dose ${-daysLeft}d overdue`);
-    else parts.push(`dose in ${daysLeft}d`);
-  }
+  // Medication timing — intentionally omitted from Today card for discretion
 
   // Weight trend
   const sorted = [...state.weights].sort((a, b) => a.date.localeCompare(b.date));
@@ -762,7 +798,7 @@ document.getElementById('btn-reset').addEventListener('click', () => {
     weights: [], goal: null, whoop: null, apikey: '', coachHistory: [],
     jabs: [], jabConfig: { name: 'Tirzepatide', doseMg: 7.5, intervalDays: 7, halfLifeDays: 5, site: 'Stomach – upper left' },
     milestonesSeen: [], plateauNotified: false, whoopConfig: { ...BACKEND_DEFAULTS },
-    checkIns: []
+    checkIns: [], supplements: [{ id: 'vitd', name: 'Vitamin D', unit: '1000 IU', log: {} }]
   };
   renderAll();
   toast('All data erased');
@@ -893,7 +929,7 @@ async function backfillWhoopHistory() {
 // of truth (if one exists) so a reinstalled or new device picks up right
 // where you left off.
 
-const SYNCED_KEYS = ['weights', 'goal', 'jabs', 'jabConfig', 'milestonesSeen', 'plateauNotified', 'coachHistory', 'apikey', 'checkIns'];
+const SYNCED_KEYS = ['weights', 'goal', 'jabs', 'jabConfig', 'milestonesSeen', 'plateauNotified', 'coachHistory', 'apikey', 'checkIns', 'supplements'];
 let pushStateTimer = null;
 
 function pushStateDebounced() {
@@ -1040,6 +1076,63 @@ document.getElementById('btn-test-push').addEventListener('click', async () => {
   }
 });
 
+/* ===================== SUPPLEMENTS ===================== */
+function renderSupplements() {
+  const wrap = document.getElementById('supplement-list');
+  if (!wrap) return;
+  const ds = todayStr();
+  if (!state.supplements.length) {
+    wrap.innerHTML = `<div class="empty-state">No supplements added yet.</div>`;
+    return;
+  }
+  wrap.innerHTML = state.supplements.map((s) => {
+    const taken = !!(s.log && s.log[ds]);
+    return `
+      <div class="supplement-item">
+        <div>
+          <div class="supplement-name">${esc(s.name)}</div>
+          <div class="supplement-meta">${esc(s.unit)} · ${taken ? 'taken today ✓' : 'not yet today'}</div>
+        </div>
+        <div class="supplement-actions">
+          <div class="supplement-toggle ${taken ? 'on' : ''}" data-sup="${s.id}">
+            <div class="knob"></div>
+          </div>
+          <button class="btn btn-ghost btn-sm" data-del-sup="${s.id}" style="padding:4px 9px;">✕</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  wrap.querySelectorAll('[data-sup]').forEach((t) => {
+    t.addEventListener('click', () => toggleSupplement(t.dataset.sup));
+  });
+  wrap.querySelectorAll('[data-del-sup]').forEach((b) => {
+    b.addEventListener('click', () => {
+      if (!confirm(`Remove ${state.supplements.find((s) => s.id === b.dataset.delSup)?.name}?`)) return;
+      state.supplements = state.supplements.filter((s) => s.id !== b.dataset.delSup);
+      persist('supplements'); renderAll();
+    });
+  });
+}
+
+function toggleSupplement(supId) {
+  const s = state.supplements.find((x) => x.id === supId);
+  if (!s) return;
+  const ds = todayStr();
+  s.log = s.log || {};
+  s.log[ds] = !s.log[ds];
+  persist('supplements');
+  renderSupplements();
+}
+
+document.getElementById('btn-add-supplement').addEventListener('click', () => {
+  const name = prompt('Supplement name?');
+  if (!name) return;
+  const unit = prompt('Amount / unit? (e.g. 1000 IU, 500mg)', '') || '';
+  state.supplements.push({ id: uid(), name, unit, log: {} });
+  persist('supplements');
+  renderAll();
+});
+
 /* ===================== JABS ===================== */
 function sortedJabs() { return [...state.jabs].sort((a, b) => a.date.localeCompare(b.date)); }
 
@@ -1079,7 +1172,7 @@ function renderJabs() {
     const daysLeft = Math.round(daysBetween(todayStr(), dueStr));
     document.getElementById('jab-due-pill').textContent = daysLeft > 0 ? `due in ${daysLeft}d` : daysLeft === 0 ? 'due today' : `overdue ${-daysLeft}d`;
   } else {
-    document.getElementById('jab-due-pill').textContent = 'no doses yet';
+    document.getElementById('jab-due-pill').textContent = 'not yet logged';
   }
   document.getElementById('jab-next-dose').textContent = `${state.jabConfig.doseMg}mg ${state.jabConfig.name}`;
   document.getElementById('jab-next-site').textContent = state.jabConfig.site || '';
@@ -1176,7 +1269,7 @@ function renderDecayChart() {
 
     ${markerX !== null ? `
       <text x="${Math.min(Math.max(markerX, 38), w - 60)}" y="${padTop - 22}" fill="#F2F4F8" font-size="12" font-weight="600" text-anchor="middle" font-family="Inter">${fmtShort(lastJab.date)}</text>
-      <text x="${Math.min(Math.max(markerX, 38), w - 60)}" y="${padTop - 8}" fill="#8B93A7" font-size="10.5" text-anchor="middle" font-family="JetBrains Mono">Dose ${jabs.length}</text>
+      <text x="${Math.min(Math.max(markerX, 38), w - 60)}" y="${padTop - 8}" fill="#8B93A7" font-size="10.5" text-anchor="middle" font-family="JetBrains Mono">${fmtShort(lastJab.date)}</text>
     ` : ''}
 
     <text x="${padL}" y="${padTop - 22}" fill="#8B93A7" font-size="11.5" text-anchor="start" font-family="JetBrains Mono">${peakMg.toFixed(1)}mg (est)</text>
@@ -1190,7 +1283,7 @@ function renderDecayChart() {
 function renderJabHistory() {
   const wrap = document.getElementById('jab-history');
   const jabs = sortedJabs().reverse();
-  if (!jabs.length) { wrap.innerHTML = `<div class="empty-state">No doses logged yet.</div>`; return; }
+  if (!jabs.length) { wrap.innerHTML = `<div class="empty-state">No history yet.</div>`; return; }
   let prevWeight = null;
   // compute deltas in chronological order first
   const chrono = [...jabs].reverse();
@@ -1240,7 +1333,7 @@ document.getElementById('btn-log-jab').addEventListener('click', () => {
     if (kg && !isNaN(kg)) { state.weights.push({ id: uid(), date, kg }); persist('weights'); }
   }
   renderAll();
-  toast('Dose logged');
+  toast('Logged');
 });
 
 document.getElementById('btn-jab-settings').addEventListener('click', () => goTo('settings'));
@@ -1295,8 +1388,8 @@ const MILESTONES = [
   { id: 'weigh_12', label: '12 weigh-ins logged', icon: 'scale', check: () => state.weights.length >= 12 },
   { id: 'goal_set', label: 'Goal set', icon: 'flag', check: () => !!(state.goal && state.goal.goal) },
   { id: 'first_jab', label: 'First dose logged', icon: 'jab', check: () => state.jabs.length >= 1 },
-  { id: 'jab_streak_4', label: '4 doses on schedule', icon: 'jab', check: () => jabStreak() >= 4 },
-  { id: 'jab_streak_12', label: '12 doses on schedule', icon: 'jab', check: () => jabStreak() >= 12 },
+  { id: 'jab_streak_4', label: '4 weeks on schedule', icon: 'jab', check: () => jabStreak() >= 4 },
+  { id: 'jab_streak_12', label: '12 weeks on schedule', icon: 'jab', check: () => jabStreak() >= 12 },
   { id: 'change_5', label: '5% change reached', icon: 'star', check: () => { const p = pctChangeFromGoalStart(); return p !== null && Math.abs(p) >= 5; } },
   { id: 'change_10', label: '10% change reached', icon: 'star', check: () => { const p = pctChangeFromGoalStart(); return p !== null && Math.abs(p) >= 10; } },
   { id: 'three_months', label: '3 months in Drift', icon: 'clock', check: () => { const e = earliestRecordDate(); return e && daysBetween(e, todayStr()) >= 90; } },
@@ -1552,14 +1645,14 @@ function buildContext() {
       `7-day avg recovery ${last7 !== null ? num(last7) + '%' : 'n/a'}${prev7 !== null ? ` vs ${num(prev7)}% the 7 days before that` : ''}. (${days.length} days of history synced.)`;
   }
 
-  let jabLine = 'No medication doses logged yet.';
+  let jabLine = 'No medication logged yet.';
   if (state.jabs.length) {
     const jabs = sortedJabs();
     const last = jabs.at(-1);
     const due = new Date(last.date + 'T00:00:00');
     due.setDate(due.getDate() + (state.jabConfig.intervalDays || 7));
-    jabLine = `${state.jabConfig.name}, ${state.jabConfig.doseMg}mg every ${state.jabConfig.intervalDays} days. Last dose ${last.date}, next due ${due.toISOString().slice(0, 10)}. ` +
-      `On-schedule streak: ${jabStreak()} doses in a row. ${jabs.length} total logged.`;
+    jabLine = `${state.jabConfig.name}, ${state.jabConfig.doseMg}mg every ${state.jabConfig.intervalDays} days. Last taken ${last.date}, next ${due.toISOString().slice(0, 10)}. ` +
+      `On-schedule streak: ${jabStreak()} in a row. ${jabs.length} total.`;
   }
 
   const plateau = detectPlateau();
@@ -1637,6 +1730,7 @@ function renderAll() {
   renderSettings();
   renderJabs();
   renderJabSettings();
+  renderSupplements();
   renderMilestones();
   renderPlateau();
   renderCoachStatus();
