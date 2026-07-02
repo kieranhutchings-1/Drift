@@ -248,44 +248,65 @@ label { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; display: bl
 #coach-send { width: auto; flex: 0 0 auto; }
 
 /* ===== Whoop rings (Home card) ===== */
-.whoop-rings-row {
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
-  padding: 4px 0;
-}
-.whoop-ring-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-.whoop-ring-wrap {
+/* ===== Whoop concentric rings ===== */
+.whoop-rings-wrap {
   position: relative;
+  width: 220px;
+  height: 220px;
+  margin: 8px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.whoop-ring-wrap svg { transform: rotate(-90deg); display: block; }
-.whoop-ring-center {
-  position: absolute;
-  inset: 0;
+.whoop-rings-wrap svg { position: absolute; inset: 0; }
+.whoop-rings-center {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  z-index: 1;
+  text-align: center;
 }
-.whoop-ring-val {
+.whoop-ring-big {
   font-family: 'JetBrains Mono', monospace;
+  font-size: 46px;
   font-weight: 700;
   line-height: 1;
+  letter-spacing: -0.02em;
 }
-.whoop-ring-unit {
-  font-size: 9px;
-  color: var(--text-faint);
-  margin-top: 1px;
-}
-.whoop-ring-label {
-  font-size: 11px;
+.whoop-ring-pct { font-size: 20px; font-weight: 400; vertical-align: super; margin-left: 1px; }
+.whoop-ring-readiness {
+  font-size: 13px;
   color: var(--text-dim);
+  margin-top: 4px;
+  font-weight: 500;
   letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.whoop-legend-row {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 16px;
+  padding: 0 4px;
+}
+.whoop-legend-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.whoop-legend-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  display: block;
+}
+.whoop-legend-name { font-size: 11px; color: var(--text-faint); letter-spacing: 0.04em; }
+.whoop-legend-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
 }
 
 /* ===== Supplement tracker ===== */

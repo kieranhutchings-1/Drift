@@ -211,53 +211,70 @@ function renderSparkline() {
 
 function renderWhoopHome() {
   const statusEl = document.getElementById('whoop-status');
-  const ringsRow = document.getElementById('whoop-rings-row');
+  const wrap = document.getElementById('whoop-rings-wrap');
+  const svg = document.getElementById('whoop-rings-svg');
+  const center = document.getElementById('whoop-rings-center');
+  const legend = document.getElementById('whoop-rings-legend');
   const dateEl = document.getElementById('whoop-latest-date');
 
   if (!state.whoop || !state.whoop.days || !state.whoop.days.length) {
     statusEl.textContent = 'not connected';
-    ringsRow.innerHTML = `<div class="empty-state" style="padding:16px 0;">Connect Whoop in Settings to see your recovery here.</div>`;
-    dateEl.textContent = '';
+    if (wrap) wrap.style.display = 'none';
+    if (legend) legend.innerHTML = '<div class="empty-state">Connect Whoop in Settings.</div>';
+    if (dateEl) dateEl.textContent = '';
     return;
   }
 
   const last = [...state.whoop.days].sort((a, b) => a.date.localeCompare(b.date)).at(-1);
-  statusEl.textContent = `${state.whoop.days.length} days synced`;
-  dateEl.textContent = `Latest: ${fmtDate(last.date)}`;
+  statusEl.textContent = `${state.whoop.days.length} days`;
+  if (wrap) wrap.style.display = 'flex';
+  if (dateEl) dateEl.textContent = fmtDate(last.date);
 
-  // Build three rings: Recovery (large, centre), Sleep (left), Strain (right)
-  ringsRow.innerHTML = [
-    makeWhoopRing('Sleep', last.sleep, 100, 56, 8, sleepColor(last.sleep), '%'),
-    makeWhoopRing('Recovery', last.recovery, 100, 72, 10, recoveryColor(last.recovery), '%', true),
-    makeWhoopRing('Strain', last.strain, 21, 56, 8, strainColor(last.strain), '')
-  ].join('');
+  const cx = 110, cy = 110;
+  const rings = [
+    { label: 'Recovery', val: last.recovery, max: 100, color: recoveryColor(last.recovery), r: 95, sw: 12 },
+    { label: 'Sleep',    val: last.sleep,     max: 100, color: '#3D7BFF',                   r: 76, sw: 10 },
+    { label: 'Strain',   val: last.strain,    max: 21,  color: '#FF5C93',                   r: 59, sw: 10 }
+  ];
+
+  const arc = (ring) => {
+    const pct = Math.min(Math.max((ring.val ?? 0) / ring.max, 0), 1);
+    const c = 2 * Math.PI * ring.r;
+    return { c, offset: c * (1 - pct) };
+  };
+
+  if (svg) svg.innerHTML = `
+    ${rings.map((ring) => {
+      const { c } = arc(ring);
+      return `<circle cx="${cx}" cy="${cy}" r="${ring.r}" fill="none" stroke="var(--surface-2)" stroke-width="${ring.sw}" opacity="0.6"/>`;
+    }).join('')}
+    ${rings.map((ring, i) => {
+      const { c, offset } = arc(ring);
+      return `<circle cx="${cx}" cy="${cy}" r="${ring.r}"
+        fill="none" stroke="${ring.color}" stroke-width="${ring.sw}"
+        stroke-linecap="round"
+        stroke-dasharray="${c}" stroke-dashoffset="${ring.val == null ? c : offset}"
+        transform="rotate(-90 ${cx} ${cy})"
+        style="transition:stroke-dashoffset 1s cubic-bezier(.4,0,.2,1) ${i*0.2}s; opacity:${ring.val == null ? 0 : 1}"/>`;
+    }).join('')}
+  `;
+
+  const rec = last.recovery != null ? Math.round(last.recovery) : null;
+  const readiness = rec == null ? '' : rec >= 67 ? 'Ready' : rec >= 34 ? 'Moderate' : 'Rest up';
+  if (center) center.innerHTML = `
+    <div class="whoop-ring-big" style="color:${recoveryColor(last.recovery)}">${rec ?? '—'}${rec != null ? '<span class="whoop-ring-pct">%</span>' : ''}</div>
+    <div class="whoop-ring-readiness">${readiness}</div>
+  `;
+
+  if (legend) legend.innerHTML = `<div class="whoop-legend-row">${rings.map((ring) => `
+    <div class="whoop-legend-item">
+      <span class="whoop-legend-dot" style="background:${ring.color}"></span>
+      <span class="whoop-legend-name">${ring.label}</span>
+      <span class="whoop-legend-val">${ring.val != null ? num(ring.val) + (ring.max === 100 ? '%' : '') : '—'}</span>
+    </div>`).join('')}</div>`;
 }
 
-function makeWhoopRing(label, value, max, size, strokeW, color, unit, large) {
-  const r = (size - strokeW * 2) / 2;
-  const circ = 2 * Math.PI * r;
-  const pct = value !== null && value !== undefined ? Math.min(Math.max(value / max, 0), 1) : 0;
-  const offset = circ * (1 - pct);
-  const valStr = value !== null && value !== undefined ? (Number.isInteger(value) ? value : num(value)) : '—';
-  const fontSize = large ? 20 : 15;
-  return `
-    <div class="whoop-ring-item">
-      <div class="whoop-ring-wrap" style="width:${size}px;height:${size}px;">
-        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-          <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="${strokeW}"/>
-          <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}"
-            stroke-width="${strokeW}" stroke-linecap="round"
-            stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
-            ${pct === 0 ? 'opacity="0"' : ''}/>
-        </svg>
-        <div class="whoop-ring-center">
-          <span class="whoop-ring-val" style="font-size:${fontSize}px; color:${color};">${valStr}</span>
-          ${unit ? `<span class="whoop-ring-unit">${unit}</span>` : ''}
-        </div>
-      </div>
-      <div class="whoop-ring-label">${label}</div>
-    </div>`;
-}
+function makeWhoopRing() {} // legacy stub — no longer used
 
 function sleepColor(v) {
   if (v === null || v === undefined) return 'var(--surface-2)';
@@ -546,7 +563,7 @@ function computeInsights() {
       const avg47 = day4_7.reduce((s, v) => s + v, 0) / day4_7.length;
       const diff = avg47 - avg13;
       if (Math.abs(diff) >= 6) {
-        insights.push(`Your recovery tends to be <strong>${diff > 0 ? 'lower days 1–3 after a dose' : 'lower days 4–7 after a dose'}</strong> (avg ${num(Math.min(avg13, avg47))}% vs ${num(Math.max(avg13, avg47))}%). Worth timing hard efforts accordingly.`);
+        insights.push(`Your recovery tends to be <strong>${diff > 0 ? 'lower in the first half of your weekly cycle' : 'lower in the second half of your weekly cycle'}</strong> (avg ${num(Math.min(avg13, avg47))}% vs ${num(Math.max(avg13, avg47))}%). Worth timing hard efforts accordingly.`);
       }
     }
   }
@@ -1170,7 +1187,7 @@ function renderJabs() {
     due.setDate(due.getDate() + (state.jabConfig.intervalDays || 7));
     const dueStr = due.toISOString().slice(0, 10);
     const daysLeft = Math.round(daysBetween(todayStr(), dueStr));
-    document.getElementById('jab-due-pill').textContent = daysLeft > 0 ? `due in ${daysLeft}d` : daysLeft === 0 ? 'due today' : `overdue ${-daysLeft}d`;
+    document.getElementById('jab-due-pill').textContent = daysLeft > 0 ? `in ${daysLeft}d` : daysLeft === 0 ? 'today' : `${-daysLeft}d ago`;
   } else {
     document.getElementById('jab-due-pill').textContent = 'not yet logged';
   }
@@ -1206,7 +1223,7 @@ function renderDecayChart() {
   const w = 390, h = 160;
   const padL = 8, padR = 8, padTop = 38, padBottom = 24;
   if (!state.jabs.length) {
-    svg.innerHTML = `<text x="195" y="84" fill="#555E70" font-size="12" text-anchor="middle" font-family="Inter">log your first dose to see this</text>`;
+    svg.innerHTML = `<text x="195" y="84" fill="#555E70" font-size="12" text-anchor="middle" font-family="Inter">start logging to see this</text>`;
     return;
   }
 
@@ -1322,12 +1339,12 @@ function renderJabHistory() {
 }
 
 document.getElementById('btn-log-jab').addEventListener('click', () => {
-  const date = prompt('Date of dose (YYYY-MM-DD)?', todayStr()) || todayStr();
-  const doseMg = parseFloat(prompt('Dose (mg)?', state.jabConfig.doseMg)) || state.jabConfig.doseMg;
-  const site = prompt('Injection site?', state.jabConfig.site) || state.jabConfig.site;
+  const date = prompt('Date (YYYY-MM-DD)?', todayStr()) || todayStr();
+  const doseMg = parseFloat(prompt('Amount (mg)?', state.jabConfig.doseMg)) || state.jabConfig.doseMg;
+  const site = prompt('Site?', state.jabConfig.site) || state.jabConfig.site;
   state.jabs.push({ id: uid(), date, doseMg, site });
   persist('jabs');
-  const logWeight = confirm('Log a weight for this dose too?');
+  const logWeight = confirm('Also log weight for this date?');
   if (logWeight) {
     const kg = parseFloat(prompt('Weight in kg?'));
     if (kg && !isNaN(kg)) { state.weights.push({ id: uid(), date, kg }); persist('weights'); }
