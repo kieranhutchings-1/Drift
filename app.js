@@ -40,7 +40,8 @@ const KEYS = {
   plateauNotified: 'drift_plateau_notified', // boolean
   whoopConfig: 'drift_whoop_config', // {workerUrl, sharedKey}
   checkIns: 'drift_checkins', // [{id, date, energy, appetite, note}]
-  supplements: 'drift_supplements' // [{id, name, unit, log: {'YYYY-MM-DD': true}}]
+  supplements: 'drift_supplements', // [{id, name, unit, log: {'YYYY-MM-DD': true}}]
+  dailyLogs: 'drift_daily_logs' // [{id, date, cpap, location, note}]
 };
 
 const store = {
@@ -63,7 +64,8 @@ let state = {
   plateauNotified: store.get(KEYS.plateauNotified, false),
   whoopConfig: store.get(KEYS.whoopConfig, BACKEND_DEFAULTS),
   checkIns: store.get(KEYS.checkIns, []),
-  supplements: store.get(KEYS.supplements, [{ id: 'vitd', name: 'Vitamin D', unit: '1000 IU', log: {} }])
+  supplements: store.get(KEYS.supplements, [{ id: 'vitd', name: 'Vitamin D', unit: '1000 IU', log: {} }]),
+  dailyLogs: store.get(KEYS.dailyLogs, [])
 };
 
 function persist(key) {
@@ -74,7 +76,8 @@ function persist(key) {
     milestonesSeen: KEYS.milestonesSeen, plateauNotified: KEYS.plateauNotified,
     whoopConfig: KEYS.whoopConfig,
     checkIns: KEYS.checkIns,
-    supplements: KEYS.supplements
+    supplements: KEYS.supplements,
+    dailyLogs: KEYS.dailyLogs
   };
   store.set(map[key], state[key]);
   // whoopConfig is what tells us WHERE the backend is — can't be synced through
@@ -491,6 +494,7 @@ function renderTodayCard() {
     ? `${capitalise(first)} — ${rest.join(', ')}.`
     : `${capitalise(first)}.`;
   el.textContent = sentence;
+  renderTodayPrediction();
 }
 function capitalise(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
@@ -716,6 +720,228 @@ function renderWorkouts() {
       </div>
     `;
   }).join('');
+}
+
+/* ===================== DAILY LOG (Journal + CPAP + Location) ===================== */
+function todayLog() {
+  return state.dailyLogs.find((l) => l.date === todayStr()) || null;
+}
+
+function renderDailyLogToday() {
+  const log = todayLog();
+  const cpapBtn = document.getElementById('btn-cpap-toggle');
+  const homeBtn = document.getElementById('btn-location-home');
+  const awayBtn = document.getElementById('btn-location-away');
+  const hotelBtn = document.getElementById('btn-location-hotel');
+  const textarea = document.getElementById('journal-input');
+  if (!cpapBtn) return;
+
+  const cpapOn = log ? !!log.cpap : false;
+  const loc = log ? log.location : '';
+  cpapBtn.dataset.active = cpapOn;
+  homeBtn.dataset.active = loc === 'home';
+  awayBtn.dataset.active = loc === 'away';
+  hotelBtn.dataset.active = loc === 'hotel';
+  if (textarea && log && log.note) textarea.value = log.note;
+  document.getElementById('log-date').textContent = new Date().toLocaleDateString(undefined, { weekday:'long', month:'short', day:'numeric' });
+}
+
+function renderJournalHistory() {
+  const wrap = document.getElementById('journal-history');
+  const countEl = document.getElementById('journal-count');
+  if (!wrap) return;
+  const logs = [...state.dailyLogs].sort((a, b) => b.date.localeCompare(a.date));
+  const withContent = logs.filter((l) => l.note || l.cpap || l.location);
+  if (countEl) countEl.textContent = `${withContent.length} entries`;
+  if (!withContent.length) { wrap.innerHTML = '<div class="empty-state">No journal entries yet.</div>'; return; }
+  wrap.innerHTML = withContent.slice(0, 20).map((l) => {
+    const tags = [];
+    if (l.cpap) tags.push('<span class="journal-tag cpap">CPAP ✓</span>');
+    if (l.location === 'home') tags.push('<span class="journal-tag">🏠 Home</span>');
+    if (l.location === 'away') tags.push('<span class="journal-tag">✈️ Away</span>');
+    if (l.location === 'hotel') tags.push('<span class="journal-tag">🏨 Hotel</span>');
+    return `<div class="journal-entry">
+      <div class="journal-entry-header">
+        <span class="journal-entry-date">${fmtDate(l.date)}</span>
+        <div class="journal-entry-tags">${tags.join('')}</div>
+      </div>
+      ${l.note ? `<div class="journal-entry-text">${esc(l.note)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// Wire up the daily log buttons
+document.addEventListener('DOMContentLoaded', () => {});
+['btn-cpap-toggle', 'btn-location-home', 'btn-location-away', 'btn-location-hotel'].forEach((id) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('click', () => {
+    const active = el.dataset.active === 'true';
+    if (id === 'btn-cpap-toggle') {
+      el.dataset.active = !active;
+    } else {
+      // Location is mutually exclusive
+      ['btn-location-home','btn-location-away','btn-location-hotel'].forEach((lid) => {
+        const lb = document.getElementById(lid);
+        if (lb) lb.dataset.active = (lid === id && !active) ? 'true' : 'false';
+      });
+    }
+  });
+});
+
+document.getElementById('btn-save-daily-log').addEventListener('click', () => {
+  const cpap = document.getElementById('btn-cpap-toggle').dataset.active === 'true';
+  const home = document.getElementById('btn-location-home').dataset.active === 'true';
+  const away = document.getElementById('btn-location-away').dataset.active === 'true';
+  const hotel = document.getElementById('btn-location-hotel').dataset.active === 'true';
+  const location = home ? 'home' : away ? 'away' : hotel ? 'hotel' : '';
+  const note = (document.getElementById('journal-input').value || '').trim();
+  const today = todayStr();
+  state.dailyLogs = state.dailyLogs.filter((l) => l.date !== today);
+  state.dailyLogs.push({ id: uid(), date: today, cpap, location, note });
+  persist('dailyLogs');
+  renderAll();
+  toast('Saved');
+});
+
+document.getElementById('btn-add-log-entry').addEventListener('click', () => {
+  document.querySelector('.daily-log-card').scrollIntoView({ behavior: 'smooth' });
+  document.getElementById('journal-input').focus();
+});
+
+/* ===================== MOMENTUM SCORE ===================== */
+function computeMomentum() {
+  const scores = {};
+
+  // 1. Weight trajectory (0-25 pts) — are you moving in the right direction?
+  const sorted = [...state.weights].sort((a, b) => a.date.localeCompare(b.date));
+  if (sorted.length >= 3 && state.goal) {
+    const recent = sorted.slice(-4);
+    const delta = recent.at(-1).kg - recent[0].kg;
+    const goalDir = state.goal.goal < state.goal.start ? -1 : 1;
+    const moving = delta * goalDir < -0.1 ? 25 : delta * goalDir > 0.2 ? 5 : 15;
+    scores.weight = { label: 'Weight', val: moving, max: 25, color: moving >= 20 ? 'var(--good)' : moving >= 12 ? 'var(--amber)' : 'var(--danger)' };
+  }
+
+  // 2. Recovery trend (0-25 pts)
+  const whoopDays = state.whoop && state.whoop.days ? [...state.whoop.days].sort((a, b) => a.date.localeCompare(b.date)) : [];
+  if (whoopDays.length >= 7) {
+    const last7 = whoopDays.slice(-7).filter((d) => d.recovery != null);
+    const avg = last7.reduce((s, d) => s + d.recovery, 0) / (last7.length || 1);
+    const pts = avg >= 67 ? 25 : avg >= 45 ? Math.round(((avg - 45) / 22) * 15 + 10) : 5;
+    scores.recovery = { label: 'Recovery', val: pts, max: 25, color: pts >= 20 ? 'var(--good)' : pts >= 12 ? 'var(--amber)' : 'var(--danger)' };
+  }
+
+  // 3. Logging consistency (0-25 pts) — combination of weight entries, check-ins, daily logs
+  const recentDays = 21;
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - recentDays);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const weightRecent = sorted.filter((w) => w.date >= cutoffStr).length;
+  const checkInRecent = state.checkIns.filter((c) => c.date >= cutoffStr).length;
+  const logRecent = state.dailyLogs.filter((l) => l.date >= cutoffStr && (l.note || l.cpap || l.location)).length;
+  const consistencyPts = Math.min(25, Math.round((weightRecent / 3) * 10 + (checkInRecent / 3) * 8 + (logRecent / 14) * 7));
+  scores.consistency = { label: 'Consistency', val: consistencyPts, max: 25, color: consistencyPts >= 18 ? 'var(--good)' : consistencyPts >= 10 ? 'var(--amber)' : 'var(--danger)' };
+
+  // 4. Medication adherence (0-25 pts) — on-schedule streak
+  if (state.jabs.length >= 1) {
+    const streak = jabStreak();
+    const pts = Math.min(25, streak >= 8 ? 25 : streak >= 4 ? 20 : streak >= 2 ? 14 : 8);
+    scores.schedule = { label: 'Schedule', val: pts, max: 25, color: pts >= 20 ? 'var(--good)' : pts >= 12 ? 'var(--amber)' : 'var(--danger)' };
+  }
+
+  const items = Object.values(scores);
+  if (!items.length) return null;
+  const total = Math.round(items.reduce((s, i) => s + i.val, 0));
+  const label = total >= 80 ? 'On fire 🔥' : total >= 60 ? 'Building momentum' : total >= 40 ? 'Getting started' : 'Let\'s go';
+  return { total, label, items };
+}
+
+function renderMomentumScore() {
+  const card = document.getElementById('momentum-card');
+  const scoreEl = document.getElementById('momentum-score');
+  const labelEl = document.getElementById('momentum-label');
+  const barsEl = document.getElementById('momentum-bars');
+  if (!card) return;
+  const result = computeMomentum();
+  if (!result) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  scoreEl.textContent = result.total;
+  labelEl.textContent = result.label;
+  barsEl.innerHTML = result.items.map((item) => `
+    <div class="momentum-bar-row">
+      <span class="momentum-bar-label">${item.label}</span>
+      <div class="momentum-bar-track">
+        <div class="momentum-bar-fill" style="width:${(item.val/item.max)*100}%; background:${item.color};"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+/* ===================== PREDICTED RECOVERY ===================== */
+function predictTomorrowRecovery() {
+  const whoopDays = state.whoop && state.whoop.days
+    ? [...state.whoop.days].sort((a, b) => a.date.localeCompare(b.date))
+    : [];
+  if (whoopDays.length < 14) return null;
+
+  // Simple pattern: weighted average of same-weekday recoveries + current trend
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowDow = tomorrow.getDay();
+  const sameDayHistory = whoopDays.filter((d) => new Date(d.date + 'T00:00:00').getDay() === tomorrowDow && d.recovery != null);
+  if (sameDayHistory.length < 2) return null;
+
+  // Weighted — more recent entries count more
+  let weightedSum = 0, weightTotal = 0;
+  sameDayHistory.forEach((d, i) => {
+    const w = i + 1;
+    weightedSum += d.recovery * w;
+    weightTotal += w;
+  });
+  const dayOfWeekAvg = weightedSum / weightTotal;
+
+  // Recent 7-day trend delta
+  const last7 = whoopDays.slice(-7).filter((d) => d.recovery != null);
+  const prev7 = whoopDays.slice(-14, -7).filter((d) => d.recovery != null);
+  let trendAdj = 0;
+  if (last7.length >= 3 && prev7.length >= 3) {
+    const l7avg = last7.reduce((s, d) => s + d.recovery, 0) / last7.length;
+    const p7avg = prev7.reduce((s, d) => s + d.recovery, 0) / prev7.length;
+    trendAdj = (l7avg - p7avg) * 0.3;
+  }
+
+  // Today's strain adjustment
+  const todayData = whoopDays.at(-1);
+  let strainAdj = 0;
+  if (todayData && todayData.strain != null) {
+    if (todayData.strain > 15) strainAdj = -6;
+    else if (todayData.strain > 10) strainAdj = -3;
+    else if (todayData.strain < 5) strainAdj = +3;
+  }
+
+  // Location adjustment — if away without CPAP, typical penalty
+  const todayLog_ = todayLog();
+  let contextAdj = 0;
+  if (todayLog_) {
+    if (!todayLog_.cpap && (todayLog_.location === 'hotel' || todayLog_.location === 'away')) contextAdj = -8;
+    else if (todayLog_.cpap && todayLog_.location !== 'home') contextAdj = -3;
+  }
+
+  const predicted = Math.max(10, Math.min(99, Math.round(dayOfWeekAvg + trendAdj + strainAdj + contextAdj)));
+  const range = 8;
+  return { low: Math.max(10, predicted - range), high: Math.min(99, predicted + range), contextAdj, strainAdj };
+}
+
+function renderTodayPrediction() {
+  const el = document.getElementById('today-prediction');
+  if (!el) return;
+  const pred = predictTomorrowRecovery();
+  if (!pred) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const notes = [];
+  if (pred.strainAdj <= -5) notes.push('high strain today');
+  if (pred.strainAdj >= 3) notes.push('easy day helps recovery');
+  if (pred.contextAdj <= -6) notes.push('away without CPAP detected');
+  el.innerHTML = `Tomorrow's predicted recovery: <strong>${pred.low}–${pred.high}%</strong>${notes.length ? ` · ${notes.join(', ')}` : ''}`;
 }
 
 /* ===================== LOG screen ===================== */
@@ -946,7 +1172,7 @@ async function backfillWhoopHistory() {
 // of truth (if one exists) so a reinstalled or new device picks up right
 // where you left off.
 
-const SYNCED_KEYS = ['weights', 'goal', 'jabs', 'jabConfig', 'milestonesSeen', 'plateauNotified', 'coachHistory', 'apikey', 'checkIns', 'supplements'];
+const SYNCED_KEYS = ['weights', 'goal', 'jabs', 'jabConfig', 'milestonesSeen', 'plateauNotified', 'coachHistory', 'apikey', 'checkIns', 'supplements', 'dailyLogs'];
 let pushStateTimer = null;
 
 function pushStateDebounced() {
@@ -1680,7 +1906,19 @@ function buildContext() {
     ? `Weekly check-in (this week): energy ${thisCI.energy}/5, appetite ${thisCI.appetite}/5${thisCI.note ? `, note: "${thisCI.note}"` : ''}.`
     : state.checkIns.length ? `Last check-in: energy ${state.checkIns.at(-1).energy}/5, appetite ${state.checkIns.at(-1).appetite}/5.` : '';
 
-  return [goalLine, weightLine, whoopLine, jabLine, plateauLine, ciLine].filter(Boolean).join(' ');
+  const recentLogs = [...state.dailyLogs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7);
+  const logLine = recentLogs.length
+    ? `Recent daily context (last ${recentLogs.length} entries): ` +
+      recentLogs.map((l) => {
+        const parts = [l.date];
+        if (l.cpap) parts.push('CPAP ✓');
+        if (l.location) parts.push(l.location);
+        if (l.note) parts.push(`"${l.note.slice(0, 60)}"`);
+        return parts.join(' — ');
+      }).join('; ')
+    : '';
+
+  return [goalLine, weightLine, whoopLine, jabLine, plateauLine, ciLine, logLine].filter(Boolean).join(' ');
 }
 
 async function askClaude(userText) {
@@ -1743,6 +1981,9 @@ function renderAll() {
   renderVelocityChart();
   renderInsights();
   renderCheckInNudge();
+  renderMomentumScore();
+  renderDailyLogToday();
+  renderJournalHistory();
   renderWeightHistory();
   renderSettings();
   renderJabs();

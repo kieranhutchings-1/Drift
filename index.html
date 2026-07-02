@@ -40,6 +40,19 @@
     <div class="card today-card" id="today-card">
       <div class="today-label">TODAY</div>
       <div class="today-msg" id="today-msg">Set a goal and connect Whoop to see your daily focus.</div>
+      <div class="today-prediction" id="today-prediction" style="display:none;"></div>
+    </div>
+
+    <!-- Momentum Score -->
+    <div class="card momentum-card" id="momentum-card">
+      <div class="row" style="margin-bottom:0;">
+        <div class="stack">
+          <div class="today-label" style="margin-bottom:4px;">MOMENTUM</div>
+          <div class="momentum-score" id="momentum-score">—</div>
+          <div class="momentum-label" id="momentum-label"></div>
+        </div>
+        <div class="momentum-bars" id="momentum-bars"></div>
+      </div>
     </div>
 
     <!-- Weekly check-in nudge -->
@@ -119,8 +132,54 @@
 
   <!-- ============ LOG ============ -->
   <section class="screen" id="screen-log">
-    <div class="screen-header"><div><h1>Log</h1><div class="sub">Weight history</div></div></div>
+    <div class="screen-header">
+      <div><h1>Log</h1><div class="sub" id="log-date"></div></div>
+      <button class="btn btn-primary btn-sm" id="btn-add-log-entry">+ Today</button>
+    </div>
 
+    <!-- Quick daily log card -->
+    <div class="card daily-log-card" id="daily-log-today">
+      <div class="card-title">Today</div>
+      <div class="daily-log-row">
+        <div class="daily-log-item" id="cpap-toggle-wrap">
+          <button class="daily-log-btn" id="btn-cpap-toggle" data-active="false">
+            <span class="daily-log-icon">😴</span>
+            <span class="daily-log-label" id="cpap-label">CPAP</span>
+          </button>
+        </div>
+        <div class="daily-log-item">
+          <button class="daily-log-btn" id="btn-location-home" data-active="false">
+            <span class="daily-log-icon">🏠</span>
+            <span class="daily-log-label">Home</span>
+          </button>
+        </div>
+        <div class="daily-log-item">
+          <button class="daily-log-btn" id="btn-location-away" data-active="false">
+            <span class="daily-log-icon">✈️</span>
+            <span class="daily-log-label">Away</span>
+          </button>
+        </div>
+        <div class="daily-log-item">
+          <button class="daily-log-btn" id="btn-location-hotel" data-active="false">
+            <span class="daily-log-icon">🏨</span>
+            <span class="daily-log-label">Hotel</span>
+          </button>
+        </div>
+      </div>
+      <textarea id="journal-input" placeholder="How are you feeling today? Anything worth noting…" rows="3" style="margin-top:12px; resize:none;"></textarea>
+      <button class="btn btn-primary btn-block btn-sm" id="btn-save-daily-log" style="margin-top:10px;">Save today's log</button>
+    </div>
+
+    <!-- Journal history -->
+    <div class="card">
+      <div class="row" style="margin-bottom:10px;">
+        <div class="card-title" style="margin-bottom:0;">Journal</div>
+        <span class="sub" id="journal-count"></span>
+      </div>
+      <div id="journal-history"></div>
+    </div>
+
+    <!-- Weight history -->
     <div class="card">
       <div class="card-title">Weight entries</div>
       <div id="weight-history"></div>
@@ -129,7 +188,7 @@
 
   </section>
 
-  <!-- ============ JABS ============ -->
+
   <section class="screen" id="screen-jabs">
     <div class="screen-header">
       <div><h1>Medication</h1><div class="sub" id="jabs-sub"></div></div>
